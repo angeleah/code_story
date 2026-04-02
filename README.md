@@ -1,6 +1,6 @@
 # CodeStory
 
-Every codebase has a story. CodeStory lets you hear it. Drop `CodeStory.tell()` into a function and see the narrative unfold: which functions are called, with what arguments (by name and value), and what they return — rendered as a nested call tree.
+Every codebase has a story. CodeStory lets you read it. Drop `CodeStory.tell()` into a function and see the narrative unfold: which functions are called, with what arguments (by name and value), and what they return — rendered as a nested call tree.
 
 **Use cases:**
 - Joining a new codebase and understanding how it actually works
@@ -11,7 +11,7 @@ Every codebase has a story. CodeStory lets you hear it. Drop `CodeStory.tell()` 
 
 ## Installation
 
-CodeStory is not yet published on Hex. Install it from GitHub by adding it to your `mix.exs`:
+CodeStory is not yet published on Hex. (coming soon - still finishing some things up.) Install it from GitHub by adding it to your `mix.exs`:
 
 ```elixir
 defp deps do
