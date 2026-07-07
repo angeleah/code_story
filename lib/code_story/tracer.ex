@@ -25,8 +25,15 @@ defmodule CodeStory.Tracer do
 
       Enum.each(modules, fn module ->
         # OTP 28's :trace.function doesn't support wildcards for function/arity
-        # Enumerate all functions and set trace patterns explicitly
-        functions = module.__info__(:functions) ++ module.__info__(:macros)
+        # Enumerate all functions and set trace patterns explicitly.
+        # module_info(:functions) includes private (defp) functions, unlike
+        # __info__(:functions) which lists only public ones. Compiler-generated
+        # entries (anonymous funs, "-name/arity-fun-0-") are excluded.
+        functions =
+          module.module_info(:functions)
+          |> Enum.reject(fn {fun, _arity} ->
+            fun |> Atom.to_string() |> String.starts_with?("-")
+          end)
 
         Enum.each(functions, fn {fun, arity} ->
           :trace.function(session, {module, fun, arity}, match_spec, [:local])

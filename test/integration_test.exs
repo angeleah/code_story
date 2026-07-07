@@ -101,6 +101,14 @@ defmodule CodeStory.IntegrationTest do
       assert content =~ "hello 3"
     end
 
+    test "traces private (defp) functions" do
+      content = traced_run_to_file(fn -> SampleApp.describe_number(7) end)
+
+      assert content =~ "describe_number"
+      assert content =~ "classify"
+      assert content =~ "{:non_negative, 7}"
+    end
+
     test "traces recursive functions" do
       content = traced_run_to_file(fn -> SampleApp.recursive_countdown(3) end)
 

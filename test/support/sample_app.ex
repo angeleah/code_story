@@ -26,4 +26,13 @@ defmodule CodeStory.TestSupport.SampleApp do
   def recursive_countdown(n), do: recursive_countdown(n - 1)
 
   def process_data(data), do: data
+
+  # Public entry delegating to a private helper — verifies that defp
+  # functions appear in traces.
+  def describe_number(n) do
+    classify(n)
+  end
+
+  defp classify(n) when n >= 0, do: {:non_negative, n}
+  defp classify(n), do: {:negative, n}
 end
