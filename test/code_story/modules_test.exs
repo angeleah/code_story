@@ -32,6 +32,15 @@ defmodule CodeStory.ModulesTest do
       assert CodeStory.TestSupport.SampleModule in modules
     end
 
+    test "includes the host app's Web namespace (MyAppWeb-style modules)" do
+      # App :code_story -> prefix "CodeStory" -> Web namespace "CodeStoryWeb".
+      # Phoenix apps put LiveViews/controllers under MyAppWeb, which shares no
+      # module-split head with MyApp — detect/0 must include both namespaces.
+      true = Code.ensure_loaded?(CodeStoryWeb.SampleWebModule)
+      modules = CodeStory.Modules.detect()
+      assert CodeStoryWeb.SampleWebModule in modules
+    end
+
     test "excludes standard library modules" do
       modules = CodeStory.Modules.detect()
       refute Kernel in modules

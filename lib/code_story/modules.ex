@@ -21,17 +21,22 @@ defmodule CodeStory.Modules do
   Detects user-defined modules from the current Mix project.
 
   Returns a list of modules whose top-level namespace matches the
-  app name from `Mix.Project.config()[:app]`.
+  app name from `Mix.Project.config()[:app]`, including the app's
+  Web namespace (e.g. `:my_app` matches `MyApp.*` and `MyAppWeb.*`,
+  the conventional Phoenix split).
   """
+  @spec detect() :: [module()]
   def detect do
     app = Mix.Project.config()[:app]
     prefix = camelize_app_name(app)
+    web_prefix = prefix <> "Web"
 
     :code.all_available()
     |> Enum.map(fn {mod_charlist, _path, _loaded} -> List.to_atom(mod_charlist) end)
     |> Enum.filter(&elixir_module?/1)
     |> Enum.filter(fn mod ->
-      hd(Module.split(mod)) == prefix
+      top = hd(Module.split(mod))
+      top == prefix or top == web_prefix
     end)
     |> Enum.reject(&code_story_module?/1)
   end
