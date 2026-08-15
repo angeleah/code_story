@@ -9,6 +9,24 @@ defmodule CodeStory.ModulesTest do
     end
   end
 
+  describe "ecto_repos/1" do
+    alias CodeStory.TestSupport.{FakeRepo, NotARepo}
+
+    test "detects modules that export __adapter__/0 and excludes those that don't" do
+      assert CodeStory.Modules.ecto_repos([FakeRepo, NotARepo]) == [FakeRepo]
+    end
+
+    test "detects a repo that is loadable but not currently loaded (Code.ensure_loaded? guard)" do
+      # Force the unloaded-but-loadable state a real repo can be in when detection
+      # runs before the tracer forces module loading.
+      :code.delete(FakeRepo)
+      :code.purge(FakeRepo)
+      refute :erlang.module_loaded(FakeRepo)
+
+      assert CodeStory.Modules.ecto_repos([FakeRepo]) == [FakeRepo]
+    end
+  end
+
   describe "detect/0" do
     test "returns a list of modules" do
       modules = CodeStory.Modules.detect()

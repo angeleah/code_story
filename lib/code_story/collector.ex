@@ -8,7 +8,7 @@ defmodule CodeStory.Collector do
 
   use GenServer
 
-  defstruct [:caller_pid, :args_map, :opts, :status, tree: [], stack: []]
+  defstruct [:caller_pid, :args_map, :opts, :status, tree: [], stack: [], boundaries: []]
 
   ## Public API
 
@@ -29,7 +29,8 @@ defmodule CodeStory.Collector do
        opts: opts,
        status: :tracing,
        tree: [],
-       stack: []
+       stack: [],
+       boundaries: Keyword.get(opts, :boundaries, [])
      }}
   end
 
@@ -40,20 +41,28 @@ defmodule CodeStory.Collector do
   end
 
   def handle_cast({:trace_event, {:call, {mod, fun, args}}}, state) do
-    if dunder?(fun) do
-      {:noreply, %{state | stack: [:skip_dunder | state.stack]}}
-    else
-      named_args = enrich_args(mod, fun, args, state.args_map)
+    cond do
+      dunder?(fun) ->
+        {:noreply, %{state | stack: [:skip_dunder | state.stack]}}
 
-      node = %{
-        module: mod,
-        function: fun,
-        args: named_args,
-        return: nil,
-        children: []
-      }
+      # Boundary module: suppress its OWN interior calls (a call to a boundary
+      # module while that same boundary module is already an ancestor). The
+      # entry call — no boundary ancestor yet — falls through and is shown.
+      mod in state.boundaries and boundary_ancestor?(state.stack, mod) ->
+        {:noreply, %{state | stack: [:skip_boundary | state.stack]}}
 
-      {:noreply, %{state | stack: [node | state.stack]}}
+      true ->
+        named_args = enrich_args(mod, fun, args, state.args_map)
+
+        node = %{
+          module: mod,
+          function: fun,
+          args: named_args,
+          return: nil,
+          children: []
+        }
+
+        {:noreply, %{state | stack: [node | state.stack]}}
     end
   end
 
@@ -62,21 +71,27 @@ defmodule CodeStory.Collector do
       [] ->
         {:noreply, state}
 
-      [:skip_dunder | rest] ->
+      # Both sentinels (`:skip_dunder`, `:skip_boundary`) are discarded the same
+      # way. The `is_atom` guard keeps the following `[current | rest]` clause
+      # provably map-only, so it can't bind a sentinel and crash on `%{current | ...}`.
+      [sentinel | rest] when is_atom(sentinel) ->
         {:noreply, %{state | stack: rest}}
 
       [current | rest] ->
         completed = %{current | return: return_value}
 
-        case rest do
-          [] ->
-            # Stack empty — auto-stop
+        # Attach to the nearest REAL ancestor, skipping any sentinels
+        # (`:skip_dunder` / `:skip_boundary` are atoms, not maps). The skipped
+        # sentinels stay on the stack above the updated parent — they haven't
+        # returned yet. A real node with no real ancestor is a root -> auto-stop.
+        case Enum.split_while(rest, &(not is_map(&1))) do
+          {_sentinels, []} ->
             new_tree = state.tree ++ [completed]
             {:noreply, %{state | tree: new_tree, stack: [], status: {:completed, new_tree}}}
 
-          [parent | grandparents] ->
+          {sentinels, [parent | grandparents]} ->
             parent = %{parent | children: parent.children ++ [completed]}
-            {:noreply, %{state | stack: [parent | grandparents]}}
+            {:noreply, %{state | stack: sentinels ++ [parent | grandparents]}}
         end
     end
   end
@@ -133,5 +148,13 @@ defmodule CodeStory.Collector do
   defp dunder?(fun) do
     name = Atom.to_string(fun)
     String.starts_with?(name, "__") and String.ends_with?(name, "__")
+  end
+
+  # True if a real node for `mod` is already on the stack (an ancestor of the
+  # call being considered). Runs before the new node is pushed, so it scans
+  # ancestors only — `is_map/1` skips sentinel atoms.
+  @spec boundary_ancestor?([map() | atom()], module()) :: boolean()
+  defp boundary_ancestor?(stack, mod) do
+    Enum.any?(stack, &(is_map(&1) and &1.module == mod))
   end
 end

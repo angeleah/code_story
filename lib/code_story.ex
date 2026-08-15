@@ -20,6 +20,11 @@ defmodule CodeStory do
       or returns) for inspecting call flow and boundaries;
       `:short_story` (default) shows names, truncated values, and returns;
       `:novel` shows names with complete untruncated values and returns
+    * `:auto_boundary` - when `true` (default), Ecto repos are treated as
+      *boundary modules*: a repo call (e.g. `Repo.get!`) is shown as a single
+      node with its args and return, but the repo's own internal calls (Ecto
+      plumbing, arity-delegation chains) are hidden. Set to `false` to trace
+      repo internals.
   """
 
   @collector_key :code_story_collector
@@ -32,7 +37,12 @@ defmodule CodeStory do
       IO.warn("CodeStory: trace already active on this process")
       {:error, :already_tracing}
     else
-      opts = Keyword.merge([show_args: true, output: :terminal, detail: :short_story], opts)
+      opts =
+        Keyword.merge(
+          [show_args: true, output: :terminal, detail: :short_story, auto_boundary: true],
+          opts
+        )
+
       do_start(opts)
     end
   end
@@ -54,6 +64,17 @@ defmodule CodeStory do
   defp do_start(opts) do
     modules = CodeStory.Modules.detect()
     args_map = CodeStory.Args.extract(modules)
+
+    # `tell/1` merges the `auto_boundary: true` default, so the value is always
+    # present here — the default lives in exactly one place (the merge above).
+    boundaries =
+      if Keyword.get(opts, :auto_boundary) do
+        CodeStory.Modules.ecto_repos(modules)
+      else
+        []
+      end
+
+    opts = Keyword.put(opts, :boundaries, boundaries)
 
     {:ok, collector_pid} = CodeStory.Collector.start(self(), args_map, opts)
 

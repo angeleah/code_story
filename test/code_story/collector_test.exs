@@ -142,6 +142,148 @@ defmodule CodeStory.CollectorTest do
     end
   end
 
+  describe "boundary modules" do
+    # `Repo` is the boundary module; `MyApp` is domain code. Bare atoms — the
+    # collector only compares module equality.
+    defp boundary_collector do
+      start_collector(opts: [boundaries: [Repo], show_args: true])
+    end
+
+    defp cast_events(pid, events) do
+      Enum.each(events, &GenServer.cast(pid, {:trace_event, &1}))
+    end
+
+    test "1. suppresses a boundary module's interior calls (plumbing)" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {Repo, :get!, [User, 1, []]}},
+        {:call, {Repo, :prepare_opts, [:all, []]}},
+        {:return_from, {Repo, :prepare_opts, 2}, []},
+        {:return_from, {Repo, :get!, 3}, :the_user},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, tree, _opts} = GenServer.call(pid, :get_result)
+      assert [node] = tree
+      assert node.module == Repo and node.function == :get!
+      assert node.children == []
+    end
+
+    test "2. suppresses the arity-delegation chain (all/1 -> all/2)" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :all, [:query]}},
+        {:call, {Repo, :all, [:query, []]}},
+        {:return_from, {Repo, :all, 2}, [:a, :b]},
+        {:return_from, {Repo, :all, 1}, [:a, :b]}
+      ])
+
+      {:completed, tree, _opts} = GenServer.call(pid, :get_result)
+      assert [node] = tree
+      assert node.function == :all
+      assert node.children == []
+    end
+
+    test "3. keeps the entry node with its args and return" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {Repo, :get!, [User, 1, []]}},
+        {:return_from, {Repo, :get!, 3}, :the_user},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, [node], _opts} = GenServer.call(pid, :get_result)
+      assert node.args == [arg1: User, arg2: 1]
+      assert node.return == :the_user
+    end
+
+    test "4. preserves a back-out to domain code as a direct child" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {MyApp, :cast, ["x"]}},
+        {:return_from, {MyApp, :cast, 1}, :casted},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, [node], _opts} = GenServer.call(pid, :get_result)
+      assert [child] = node.children
+      assert child.module == MyApp and child.function == :cast
+    end
+
+    test "5. [C1] back-out returning THROUGH a sentinel does not crash and attaches correctly" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {Repo, :get!, [User, 1, []]}},
+        {:call, {MyApp, :cast, ["x"]}},
+        {:return_from, {MyApp, :cast, 1}, :casted},
+        {:return_from, {Repo, :get!, 3}, :the_user},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, [node], _opts} = GenServer.call(pid, :get_result)
+      assert node.function == :get!
+      assert [child] = node.children
+      assert child.module == MyApp and child.function == :cast
+      assert Process.alive?(pid)
+    end
+
+    test "6. leaves the stack empty and completed after a boundary sequence" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {Repo, :get!, [User, 1, []]}},
+        {:return_from, {Repo, :get!, 3}, :the_user},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, _tree, _opts} = GenServer.call(pid, :get_result)
+      assert :sys.get_state(pid).stack == []
+    end
+
+    test "7. regression: boundaries: [] leaves the interior calls untouched" do
+      pid = start_collector(opts: [boundaries: [], show_args: true])
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {Repo, :get!, [User, 1, []]}},
+        {:return_from, {Repo, :get!, 3}, :the_user},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, [node], _opts} = GenServer.call(pid, :get_result)
+      assert [child] = node.children
+      assert child.function == :get!
+    end
+
+    test "8. suppresses a boundary call made by backed-out domain code" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [User, 1]}},
+        {:call, {MyApp, :process, [:x]}},
+        {:call, {Repo, :other, [:y]}},
+        {:return_from, {Repo, :other, 1}, :z},
+        {:return_from, {MyApp, :process, 1}, :done},
+        {:return_from, {Repo, :get!, 2}, :the_user}
+      ])
+
+      {:completed, [node], _opts} = GenServer.call(pid, :get_result)
+      assert [child] = node.children
+      assert child.module == MyApp and child.function == :process
+      assert child.children == []
+    end
+  end
+
   describe "get_result" do
     test "returns tracing status when still active" do
       pid = start_collector()

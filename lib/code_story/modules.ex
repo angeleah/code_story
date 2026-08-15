@@ -41,6 +41,22 @@ defmodule CodeStory.Modules do
     |> Enum.reject(&code_story_module?/1)
   end
 
+  @doc """
+  Filters the given modules to those that are Ecto repos.
+
+  Detection is runtime duck-typing — a repo is any module exporting
+  `__adapter__/0` (which `use Ecto.Repo` defines). CodeStory has **no**
+  compile-time dependency on Ecto.
+
+  `Code.ensure_loaded?/1` is required: `function_exported?/3` returns `false`
+  for a merely-loadable-but-unloaded module and will not load it, and detection
+  can run before the tracer forces modules to load.
+  """
+  @spec ecto_repos([module()]) :: [module()]
+  def ecto_repos(modules) do
+    Enum.filter(modules, &(Code.ensure_loaded?(&1) and function_exported?(&1, :__adapter__, 0)))
+  end
+
   @code_story_modules [
     CodeStory,
     CodeStory.Modules,
