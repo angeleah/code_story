@@ -34,6 +34,27 @@ defmodule CodeStory.CollectorTest do
     end
   end
 
+  describe "trace_progress (narrate's completion signal)" do
+    test "reports call-free, then in-progress, then completed" do
+      pid = start_collector()
+
+      # No events yet: tracing, no call seen — narrate uses this to detect a
+      # genuinely call-free fun.
+      assert {:tracing, false} = GenServer.call(pid, :trace_progress)
+
+      # A call has arrived but not yet returned: tracing, call seen. narrate must
+      # keep waiting here rather than concluding the tree is empty.
+      GenServer.cast(pid, {:trace_event, {:call, {MyApp, :add, [3, 2]}}})
+      assert {:tracing, true} = GenServer.call(pid, :trace_progress)
+
+      # After the top-level return: completed, with the built tree.
+      GenServer.cast(pid, {:trace_event, {:return_from, {MyApp, :add, 2}, 5}})
+      assert {:completed, [%{function: :add}]} = GenServer.call(pid, :trace_progress)
+
+      GenServer.stop(pid)
+    end
+  end
+
   describe "trace events" do
     test "builds a tree from call and return_from events" do
       pid = start_collector()

@@ -27,6 +27,17 @@ defmodule CodeStory.TestSupport.SampleApp do
 
   def process_data(data), do: data
 
+  # Calls `add/2` three times as consecutive siblings — a repeated-sibling run
+  # that `CodeStory.Fold` collapses (unlike `recursive_countdown`, which nests).
+  def repeat_add(x) do
+    [add(x, x), add(x, x), add(x, x)]
+  end
+
+  # Entry that crosses into a boundary module (FakeRepo duck-types an Ecto repo).
+  def fetch_via_repo(id) do
+    CodeStory.TestSupport.FakeRepo.get(id)
+  end
+
   # Public entry delegating to a private helper — verifies that defp
   # functions appear in traces.
   def describe_number(n) do

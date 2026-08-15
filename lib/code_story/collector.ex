@@ -8,7 +8,16 @@ defmodule CodeStory.Collector do
 
   use GenServer
 
-  defstruct [:caller_pid, :args_map, :opts, :status, tree: [], stack: [], boundaries: []]
+  defstruct [
+    :caller_pid,
+    :args_map,
+    :opts,
+    :status,
+    tree: [],
+    stack: [],
+    boundaries: [],
+    saw_call: false
+  ]
 
   ## Public API
 
@@ -41,6 +50,12 @@ defmodule CodeStory.Collector do
   end
 
   def handle_cast({:trace_event, {:call, {mod, fun, args}}}, state) do
+    # Sticky: a call event has now been observed. Lets `narrate` distinguish a
+    # genuinely call-free run (never true) from a large trace still draining
+    # (true, tree not yet complete) — the two are otherwise the same `:tracing`
+    # state with an empty `tree`.
+    state = %{state | saw_call: true}
+
     cond do
       dunder?(fun) ->
         {:noreply, %{state | stack: [:skip_dunder | state.stack]}}
@@ -105,6 +120,19 @@ defmodule CodeStory.Collector do
       :tracing ->
         {:reply, {:tracing, state.tree, state.opts}, state}
     end
+  end
+
+  # Completion-aware progress for `narrate`'s bounded poll. `tree` is only ever
+  # populated at completion, so a caller must wait for `{:completed, tree}`;
+  # `saw_call` tells it whether any call has arrived yet (draining vs. call-free).
+  def handle_call(:trace_progress, _from, state) do
+    reply =
+      case state.status do
+        {:completed, tree} -> {:completed, tree}
+        :tracing -> {:tracing, state.saw_call}
+      end
+
+    {:reply, reply, state}
   end
 
   # Raw trace messages from :trace session (OTP 28+)

@@ -75,6 +75,75 @@ defmodule CodeStory do
     end
   end
 
+  @doc """
+  Runs `fun` while tracing, returning `{result, tree}` without printing.
+
+  `result` is whatever `fun` returned; `tree` is the raw call tree as data — a
+  list of `%{module, function, args, return, children}` node maps. This is the
+  programmatic counterpart to `tell/0` + `stop/0`: nothing is written to the
+  terminal or a file, and no display transforms (folding, depth) are applied — the
+  tree is the honest, full structure. Pair it with `to_encodable/2` to get
+  JSON-ready data.
+
+      {invoice, tree} = CodeStory.narrate(fn -> process_order(params) end)
+
+  Notes:
+
+    * Traces the calling process and captures only the **first** top-level call, so
+      the clean pattern is one entry call: `narrate(fn -> entry(...) end)`. A `fun`
+      with no traced calls returns `{result, []}`.
+    * `opts` are trace-time only — currently `:auto_boundary` (default `true`, as in
+      `tell/1`). Pass `auto_boundary: false` to include an Ecto repo's internals in
+      the raw tree.
+    * **Raises** `ArgumentError` if a trace is already active on this process
+      (unlike `tell/1`, which returns `{:error, :already_tracing}` — a tagged tuple
+      would be ambiguous with a legitimate `{:error, tree}` result).
+  """
+  @spec narrate((-> result), keyword()) :: {result, [map()]} when result: var
+  def narrate(fun, opts \\ []) when is_function(fun, 0) do
+    if Process.get(@collector_key) do
+      raise ArgumentError, "CodeStory.narrate: a trace is already active on this process"
+    end
+
+    opts = Keyword.merge([auto_boundary: true], opts)
+
+    case do_start(opts) do
+      :ok ->
+        # do_start put the collector pid under @collector_key before returning :ok.
+        collector_pid = Process.get(@collector_key)
+
+        try do
+          result = fun.()
+          {result, fetch_tree(collector_pid)}
+        after
+          CodeStory.Tracer.stop_tracing()
+          Process.delete(@collector_key)
+          # Benign TOCTOU: the collector only dies if its monitored caller (this
+          # process) dies, which cannot happen mid-cleanup here.
+          if is_pid(collector_pid) and Process.alive?(collector_pid) do
+            GenServer.stop(collector_pid)
+          end
+        end
+
+      {:error, reason} ->
+        raise "CodeStory.narrate: could not start tracing (#{inspect(reason)})"
+    end
+  end
+
+  @doc """
+  Converts a call tree (from `narrate/2`) into a JSON-ready plain-data structure.
+
+  Dependency-free: the result contains only strings / numbers / booleans / nil /
+  lists / maps, so `JSON.encode!/1` (Elixir 1.18+) or `Jason.encode!/1` works
+  directly. Faithful by default; opt into compaction with `:fold_repeats`,
+  `:depth`, and `:detail`. See `CodeStory.Encoder` for the schema and options.
+
+      {_result, tree} = CodeStory.narrate(fn -> entry() end)
+      data = CodeStory.to_encodable(tree, fold_repeats: true, depth: 4)
+  """
+  @spec to_encodable([map()], keyword()) :: [map()]
+  def to_encodable(tree, opts \\ []), do: CodeStory.Encoder.encode(tree, opts)
+
   defp do_start(opts) do
     modules = CodeStory.Modules.detect()
     args_map = CodeStory.Args.extract(modules)
@@ -140,6 +209,42 @@ defmodule CodeStory do
 
     if Process.alive?(collector_pid), do: GenServer.stop(collector_pid)
     :ok
+  end
+
+  # Trace events reach the collector asynchronously, and the collector only fills
+  # `tree` at completion (nodes live on its stack until then) — so there is no
+  # observable "partial tree", only `:tracing` vs `:completed`. Poll `:completed`.
+  #
+  # The catch: a still-draining large trace and a genuinely call-free `fun` both
+  # look like `:tracing` with an empty tree. The collector's sticky `saw_call`
+  # flag distinguishes them: once a call has arrived, we keep waiting (up to a
+  # generous ceiling) for `:completed`; if no call has arrived past a short grace,
+  # the `fun` made no traced calls and we return `[]`.
+  @saw_call_grace_ms 50
+  @completion_ceiling_ms 5_000
+
+  defp fetch_tree(pid), do: fetch_tree(pid, 0)
+
+  defp fetch_tree(pid, waited) do
+    case GenServer.call(pid, :trace_progress) do
+      {:completed, tree} ->
+        tree
+
+      # No call ever observed past the grace window → the fun made no traced calls.
+      {:tracing, false} when waited >= @saw_call_grace_ms ->
+        []
+
+      # A call arrived but completion is taking unusually long → give up safely.
+      {:tracing, _saw_call} when waited >= @completion_ceiling_ms ->
+        []
+
+      {:tracing, _saw_call} ->
+        Process.sleep(2)
+        fetch_tree(pid, waited + 2)
+    end
+  catch
+    :exit, {:noproc, _} -> []
+    :exit, {:normal, _} -> []
   end
 
   defp output_result(tree, _opts) when tree == [], do: :ok
