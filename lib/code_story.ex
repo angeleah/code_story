@@ -25,6 +25,13 @@ defmodule CodeStory do
       node with its args and return, but the repo's own internal calls (Ecto
       plumbing, arity-delegation chains) are hidden. Set to `false` to trace
       repo internals.
+    * `:fold_repeats` - when `true` (default), consecutive sibling calls to the
+      same function collapse into one node marked `×N` (or `×N (varies)` when the
+      calls share a function but differ). Set to `false` to show every call.
+    * `:depth` - caps how many levels the rendered trace nests. A positive
+      integer (`depth: 1` shows the entry call only; `depth: 2` adds its direct
+      children; etc.); below the cap a node's interior is replaced by a
+      `… (N more levels)` marker. Defaults to `:infinity` (no limit).
   """
 
   @collector_key :code_story_collector
@@ -39,7 +46,14 @@ defmodule CodeStory do
     else
       opts =
         Keyword.merge(
-          [show_args: true, output: :terminal, detail: :short_story, auto_boundary: true],
+          [
+            show_args: true,
+            output: :terminal,
+            detail: :short_story,
+            auto_boundary: true,
+            fold_repeats: true,
+            depth: :infinity
+          ],
           opts
         )
 
@@ -131,6 +145,7 @@ defmodule CodeStory do
   defp output_result(tree, _opts) when tree == [], do: :ok
 
   defp output_result(tree, opts) do
+    tree = if Keyword.get(opts, :fold_repeats, true), do: CodeStory.Fold.fold(tree), else: tree
     output_mode = Keyword.get(opts, :output, :terminal)
 
     case output_mode do

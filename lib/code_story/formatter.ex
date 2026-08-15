@@ -8,6 +8,8 @@ defmodule CodeStory.Formatter do
   @blue "\e[34m"
   @yellow "\e[33m"
   @green "\e[32m"
+  @magenta "\e[35m"
+  @dim "\e[90m"
   @reset "\e[0m"
 
   @compact_inspect_opts [limit: 3, printable_limit: 50, width: 80]
@@ -20,11 +22,12 @@ defmodule CodeStory.Formatter do
     detail = Keyword.get(opts, :detail, :short_story)
     show_args = Keyword.get(opts, :show_args, true)
     inspect_opts = inspect_opts_for(detail)
+    max_depth = max_depth_for(opts)
 
     lines =
       [
         "#{@cyan}--- CodeStory Trace ---#{@reset}"
-        | format_nodes(tree, 0, show_args, detail, inspect_opts)
+        | format_nodes(tree, 0, show_args, detail, inspect_opts, max_depth)
       ] ++
         ["#{@cyan}--- End Trace ---#{@reset}"]
 
@@ -43,54 +46,95 @@ defmodule CodeStory.Formatter do
   defp inspect_opts_for(:novel), do: @full_inspect_opts
   defp inspect_opts_for(_), do: @compact_inspect_opts
 
-  defp format_nodes(nodes, depth, show_args, detail, inspect_opts) do
+  # `:depth` caps rendered nesting. Any number is accepted: floats are truncated
+  # to an integer and values `< 1` clamp to 1. `:infinity` (and any non-number)
+  # means no limit.
+  @spec max_depth_for(keyword()) :: pos_integer() | :infinity
+  defp max_depth_for(opts) do
+    case Keyword.get(opts, :depth, :infinity) do
+      n when is_number(n) -> max(trunc(n), 1)
+      _ -> :infinity
+    end
+  end
+
+  defp format_nodes(nodes, depth, show_args, detail, inspect_opts, max_depth) do
     Enum.flat_map(nodes, fn node ->
-      format_node(node, depth, show_args, detail, inspect_opts)
+      format_node(node, depth, show_args, detail, inspect_opts, max_depth)
     end)
   end
 
-  defp format_node(node, depth, _show_args, :outline, _inspect_opts) do
+  defp format_node(node, depth, _show_args, :outline, _inspect_opts, max_depth) do
     func_indent = indent(depth * 2)
     arg_indent = indent(depth * 2 + 2)
 
     display_name = format_function_name(node.module, node.function)
-    func_line = "#{func_indent}#{@blue}#{display_name}#{@reset}"
+    func_line = "#{func_indent}#{@blue}#{display_name}#{@reset}#{count_suffix(node)}"
 
     arg_lines =
       Enum.map(node.args, fn {name, _value} ->
         "#{arg_indent}#{@yellow}#{name}#{@reset}"
       end)
 
-    child_lines = format_nodes(node.children, depth + 1, true, :outline, [])
+    child_lines =
+      if node.children != [] and not show_children?(depth, max_depth) do
+        [marker_line(depth, node)]
+      else
+        format_nodes(node.children, depth + 1, true, :outline, [], max_depth)
+      end
 
     [func_line] ++ arg_lines ++ child_lines
   end
 
-  defp format_node(node, depth, show_args, detail, inspect_opts) do
+  defp format_node(node, depth, show_args, detail, inspect_opts, max_depth) do
     func_indent = indent(depth * 2)
     arg_indent = indent(depth * 2 + 2)
 
     # Function name with module prefix on its own line
     display_name = format_function_name(node.module, node.function)
-    func_line = "#{func_indent}#{@blue}#{display_name}#{@reset}"
+    func_line = "#{func_indent}#{@blue}#{display_name}#{@reset}#{count_suffix(node)}"
 
     # Each arg on its own line, indented 2 from function
     arg_lines = format_args(node.args, arg_indent, show_args, inspect_opts)
-
-    # Children at same indent as args
-    child_lines = format_nodes(node.children, depth + 1, show_args, detail, inspect_opts)
 
     if node.children != [] do
       # Return at same level as function name
       return_line =
         "#{func_indent}#{@green}=> #{display_name} returned #{inspect(node.return, inspect_opts)}#{@reset}"
 
-      [func_line] ++ arg_lines ++ [""] ++ child_lines ++ [""] ++ [return_line]
+      # At the cap, replace the interior with a single marker line (no recursion).
+      body =
+        if show_children?(depth, max_depth) do
+          format_nodes(node.children, depth + 1, show_args, detail, inspect_opts, max_depth)
+        else
+          [marker_line(depth, node)]
+        end
+
+      [func_line] ++ arg_lines ++ [""] ++ body ++ [""] ++ [return_line]
     else
-      # Leaf return at same level as function name
+      # Leaf return at same level as function name — leaves never truncate.
       return_line = "#{func_indent}#{format_return(node.return, inspect_opts)}"
       [func_line] ++ arg_lines ++ [return_line]
     end
+  end
+
+  # Show a node's children iff we're above the depth cap. `:infinity` = always.
+  @spec show_children?(non_neg_integer(), pos_integer() | :infinity) :: boolean()
+  defp show_children?(_depth, :infinity), do: true
+  defp show_children?(depth, max_depth), do: depth + 1 < max_depth
+
+  # Depth of the pruned subtree below `node` (levels hidden by truncation).
+  @spec levels_below(map()) :: non_neg_integer()
+  defp levels_below(%{children: []}), do: 0
+
+  defp levels_below(%{children: children}),
+    do: 1 + Enum.max(Enum.map(children, &levels_below/1))
+
+  # The `… (K more level[s])` marker, at child indent. K is always ≥ 1 here.
+  @spec marker_line(non_neg_integer(), map()) :: String.t()
+  defp marker_line(depth, node) do
+    k = levels_below(node)
+    unit = if k == 1, do: "level", else: "levels"
+    "#{indent((depth + 1) * 2)}#{@dim}… (#{k} more #{unit})#{@reset}"
   end
 
   defp format_args(args, arg_indent, true, inspect_opts) do
@@ -109,6 +153,19 @@ defmodule CodeStory.Formatter do
 
   defp format_return(value, inspect_opts),
     do: "#{@green}=> #{inspect(value, inspect_opts)}#{@reset}"
+
+  # A ` ×N` (or ` ×N (varies)`) suffix for a folded node; "" for an ordinary node.
+  @spec count_suffix(map()) :: String.t()
+  defp count_suffix(node) do
+    case Map.get(node, :count, 1) do
+      n when n > 1 ->
+        varies = if node[:varies], do: " (varies)", else: ""
+        " #{@magenta}×#{n}#{varies}#{@reset}"
+
+      _ ->
+        ""
+    end
+  end
 
   defp format_function_name(module, function) do
     mod_name =

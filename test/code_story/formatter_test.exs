@@ -27,6 +27,35 @@ defmodule CodeStory.FormatterTest do
     }
   ]
 
+  # A 4-level chain A→B→C→D (single child each) for depth-cap assertions.
+  @deep_tree [
+    %{
+      module: MyApp,
+      function: :a,
+      args: [x: 1],
+      return: :ra,
+      children: [
+        %{
+          module: MyApp,
+          function: :b,
+          args: [x: 2],
+          return: :rb,
+          children: [
+            %{
+              module: MyApp,
+              function: :c,
+              args: [x: 3],
+              return: :rc,
+              children: [
+                %{module: MyApp, function: :d, args: [x: 4], return: :rd, children: []}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+
   describe "format/2 show_args: true" do
     test "formats a simple leaf call with module and function name" do
       output = Formatter.format(@simple_tree, show_args: true)
@@ -232,6 +261,213 @@ defmodule CodeStory.FormatterTest do
       assert plain =~ "  MyApp.mult"
       refute plain =~ "=> "
       refute plain =~ "returned"
+    end
+  end
+
+  describe "format/2 with folded nodes (count / varies)" do
+    test "a node with count renders ×N on the function line" do
+      tree = [
+        %{
+          module: MyApp,
+          function: :add,
+          args: [num1: 3, num2: 2],
+          return: 5,
+          children: [],
+          count: 98
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(tree, show_args: true))
+      lines = String.split(plain, "\n")
+      assert Enum.at(lines, 1) == "MyApp.add ×98"
+    end
+
+    test "a varies node renders ×N (varies)" do
+      tree = [
+        %{
+          module: MyApp,
+          function: :add,
+          args: [num1: 3, num2: 2],
+          return: 5,
+          children: [],
+          count: 98,
+          varies: true
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(tree, show_args: true))
+      lines = String.split(plain, "\n")
+      assert Enum.at(lines, 1) == "MyApp.add ×98 (varies)"
+    end
+
+    test "a node without count renders exactly as before (regression)" do
+      plain = strip_ansi(Formatter.format(@simple_tree, show_args: true))
+      refute plain =~ "×"
+    end
+
+    test "×N appears on the function line only, never on the return line" do
+      tree = [
+        %{
+          module: MyApp,
+          function: :add_sub_mult,
+          args: [num1: 3, num2: 2],
+          return: 20,
+          count: 98,
+          children: [%{module: MyApp, function: :add, args: [], return: 5, children: []}]
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(tree, show_args: true))
+      assert length(Regex.scan(~r/×98/, plain)) == 1
+      assert plain =~ "=> MyApp.add_sub_mult returned 20"
+    end
+
+    test "×N is stripped by format_plain" do
+      tree = [%{module: MyApp, function: :add, args: [], return: 5, children: [], count: 98}]
+      out = Formatter.format_plain(tree, show_args: true)
+      refute out =~ "\e["
+      assert out =~ "MyApp.add ×98"
+    end
+
+    test ":outline detail also renders ×N on the function line" do
+      tree = [
+        %{
+          module: MyApp,
+          function: :add,
+          args: [num1: 3, num2: 2],
+          return: 5,
+          children: [],
+          count: 98
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(tree, detail: :outline))
+      lines = String.split(plain, "\n")
+      assert Enum.at(lines, 1) == "MyApp.add ×98"
+    end
+  end
+
+  describe "format/2 with :depth" do
+    test "depth: :infinity (and omitted) renders unchanged; no marker" do
+      base = strip_ansi(Formatter.format(@nested_tree, show_args: true))
+      inf = strip_ansi(Formatter.format(@nested_tree, show_args: true, depth: :infinity))
+      assert inf == base
+      refute base =~ "more level"
+    end
+
+    test "depth: 1 shows only the root with a marker; child names absent" do
+      plain = strip_ansi(Formatter.format(@nested_tree, show_args: true, depth: 1))
+      assert plain =~ "MyApp.add_sub_mult"
+      assert plain =~ "num1: 3"
+      assert plain =~ "=> MyApp.add_sub_mult returned 20"
+      assert plain =~ "more level"
+      refute plain =~ "MyApp.subtract"
+      refute plain =~ "MyApp.mult"
+    end
+
+    test "depth caps at N levels with correct K in the marker" do
+      d1 = strip_ansi(Formatter.format(@deep_tree, show_args: true, depth: 1))
+      assert d1 =~ "MyApp.a"
+      assert d1 =~ "… (3 more levels)"
+      refute d1 =~ "MyApp.b"
+      refute d1 =~ "MyApp.c"
+      refute d1 =~ "MyApp.d"
+
+      d2 = strip_ansi(Formatter.format(@deep_tree, show_args: true, depth: 2))
+      assert d2 =~ "MyApp.a"
+      assert d2 =~ "MyApp.b"
+      assert d2 =~ "… (2 more levels)"
+      refute d2 =~ "MyApp.c"
+      refute d2 =~ "MyApp.d"
+    end
+
+    test "a leaf at the cap renders normally with no marker" do
+      capped = strip_ansi(Formatter.format(@simple_tree, show_args: true, depth: 1))
+      full = strip_ansi(Formatter.format(@simple_tree, show_args: true, depth: :infinity))
+      assert capped == full
+      refute capped =~ "more level"
+    end
+
+    test "format_plain shows the plain marker and no ANSI" do
+      out = Formatter.format_plain(@deep_tree, show_args: true, depth: 1)
+      refute out =~ "\e["
+      assert out =~ "… (3 more levels)"
+    end
+
+    test ":outline detail also truncates with a marker" do
+      plain = strip_ansi(Formatter.format(@deep_tree, detail: :outline, depth: 1))
+      assert plain =~ "MyApp.a"
+      assert plain =~ "… (3 more levels)"
+      refute plain =~ "MyApp.b"
+    end
+
+    test "a truncated node still shows its own return line" do
+      plain = strip_ansi(Formatter.format(@deep_tree, show_args: true, depth: 1))
+      assert plain =~ "=> MyApp.a returned :ra"
+    end
+
+    test "truncation composes with a folded (count) node" do
+      folded = [
+        %{
+          module: MyApp,
+          function: :deliver,
+          args: [id: 1],
+          return: :ok,
+          count: 5,
+          varies: true,
+          children: [
+            %{
+              module: MyApp,
+              function: :inner,
+              args: [],
+              return: :x,
+              children: [
+                %{module: MyApp, function: :deep, args: [], return: :y, children: []}
+              ]
+            }
+          ]
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(folded, show_args: true, depth: 1))
+      assert plain =~ "MyApp.deliver ×5 (varies)"
+      assert plain =~ "id: 1"
+      assert plain =~ "more level"
+      assert plain =~ "=> MyApp.deliver returned :ok"
+      refute plain =~ "MyApp.inner"
+    end
+
+    test "depth >= tree height renders the full tree with no marker" do
+      for n <- [4, 99] do
+        plain = strip_ansi(Formatter.format(@deep_tree, show_args: true, depth: n))
+        assert plain =~ "MyApp.d"
+        refute plain =~ "more level"
+      end
+    end
+
+    test "K == 1 renders singular 'more level'" do
+      plain = strip_ansi(Formatter.format(@deep_tree, show_args: true, depth: 3))
+      assert plain =~ "… (1 more level)"
+      refute plain =~ "1 more levels"
+      assert plain =~ "MyApp.c"
+      refute plain =~ "MyApp.d"
+    end
+
+    test "depth: 0 is clamped to depth: 1" do
+      assert Formatter.format(@deep_tree, show_args: true, depth: 0) ==
+               Formatter.format(@deep_tree, show_args: true, depth: 1)
+    end
+
+    test "a float depth is truncated to an integer cap (2.0 behaves as 2)" do
+      assert Formatter.format(@deep_tree, show_args: true, depth: 2.0) ==
+               Formatter.format(@deep_tree, show_args: true, depth: 2)
+    end
+
+    test ":novel detail also truncates" do
+      plain = strip_ansi(Formatter.format(@deep_tree, show_args: true, detail: :novel, depth: 1))
+      assert plain =~ "MyApp.a"
+      assert plain =~ "more level"
+      refute plain =~ "MyApp.b"
     end
   end
 
