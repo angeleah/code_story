@@ -3,6 +3,7 @@
 Every codebase has a story. CodeStory lets you read it. Drop `CodeStory.tell()` into a function and see the narrative unfold: which functions are called, with what arguments (by name and value), and what they return — rendered as a nested call tree.
 
 **Use cases:**
+
 - Joining a new codebase and understanding how it actually works
 - Tracing call flow before refactoring
 - Spotting redundant or unexpected function calls
@@ -53,18 +54,18 @@ This outputs a nested call tree to the terminal:
 ```
 --- CodeStory Trace ---
 process_order
-  params: %{item: "widget", qty: 3}
+  params: %{items: [...], customer_id: 7}
 
-  validate_order
-    params: %{item: "widget", qty: 3}
+  validate_item ×3 (varies)
+    item: %{sku: "A1", qty: 2}
   => :ok
+
   calculate_total
-    item: "widget"
-    qty: 3
+    items: [...]
   => 29.97
-  create_invoice
-    item: "widget"
-    total: 29.97
+
+  Repo.insert!
+    changeset: #Ecto.Changeset<...>
   => %Invoice{id: 42}
 
 => process_order returned %Invoice{id: 42}
@@ -72,6 +73,11 @@ process_order
 ```
 
 Each function name appears on its own line, with arguments and return values indented below it. Functions with children are visually separated by blank lines.
+
+A few things happen by default to keep the story readable:
+
+- **Repeated calls fold.** The three `validate_item` calls collapse into one node marked `×3` — or `×3 (varies)` when the calls share a function but differ in their arguments (a single representative call is shown). Turn this off with `fold_repeats: false`.
+- **Infrastructure stays at the boundary.** A call into your Ecto repo (`Repo.insert!`) appears as a single node with its arguments and return; the repo's internal Ecto plumbing is hidden. Turn this off with `auto_boundary: false`.
 
 Only your project's own functions appear in the trace. Standard library calls, dependency code, framework-generated functions (like `__struct__/0`, `__changeset__/0`), and CodeStory itself are filtered out automatically.
 
@@ -97,15 +103,29 @@ CodeStory.tell(show_args: false, output: :both)
   `:file` writes to `code_story_trace.log` in your project root (ANSI codes stripped).
   `:both` writes to terminal and file.
 
+- **`auto_boundary`** — treat Ecto repos as _boundary modules_: a repo call
+  (e.g. `Repo.get!`) shows as a single node with its arguments and return, but the
+  repo's internal Ecto plumbing is hidden. Default: `true`. Set to `false` to
+  trace repo internals.
+
+- **`fold_repeats`** — collapse consecutive sibling calls to the same function
+  into one node marked `×N` (or `×N (varies)` when the calls share a function but
+  differ). Default: `true`. Set to `false` to show every call.
+
+- **`depth`** — cap how many levels the trace nests. A positive integer
+  (`depth: 1` shows the entry call only; `depth: 2` adds its direct children, and
+  so on); below the cap a node's interior is replaced by a `… (N more levels)`
+  marker. Default: `:infinity` (no limit).
+
 ## How It Differs from `dbg/2`
 
-| | `dbg/2` | CodeStory |
-|---|---|---|
-| **Scope** | Single expression or pipeline | Span of execution between tell/stop |
+|                   | `dbg/2`                                | CodeStory                                                  |
+| ----------------- | -------------------------------------- | ---------------------------------------------------------- |
+| **Scope**         | Single expression or pipeline          | Span of execution between tell/stop                        |
 | **What it shows** | Every intermediate value in a pipeline | Only user-defined function calls (filters out stdlib/deps) |
-| **Identity** | Shows code expressions | Shows function names with named arguments |
-| **Purpose** | Debug a specific value | Hear the story — understand call flow |
-| **Output** | Per-expression, inline | Buffered, dumped as one cohesive block |
+| **Identity**      | Shows code expressions                 | Shows function names with named arguments                  |
+| **Purpose**       | Debug a specific value                 | Hear the story — understand call flow                      |
+| **Output**        | Per-expression, inline                 | Buffered, dumped as one cohesive block                     |
 
 ## How It Works
 
