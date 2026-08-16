@@ -38,7 +38,25 @@ defmodule CodeStory do
 
   @doc """
   Starts tracing user-defined function calls on the current process.
+
+  Pair with `stop/0`, which prints the collected call tree:
+
+      CodeStory.tell()
+      result = process_order(params)
+      CodeStory.stop()
+
+  Accepts the options documented in the [module docs](`CodeStory`) —
+  `:show_args`, `:output`, `:detail`, `:auto_boundary`, `:fold_repeats`, and
+  `:depth`. For example:
+
+      CodeStory.tell(detail: :outline)
+      CodeStory.tell(detail: :novel, output: :file)
+
+  Returns `:ok`, or `{:error, :already_tracing}` (with a warning) if a trace is
+  already active on this process. For a non-printing, data-returning
+  alternative, see `narrate/2`.
   """
+  @spec tell(keyword()) :: :ok | {:error, term()}
   def tell(opts \\ []) do
     if Process.get(@collector_key) do
       IO.warn("CodeStory: trace already active on this process")
@@ -62,8 +80,16 @@ defmodule CodeStory do
   end
 
   @doc """
-  Stops tracing and outputs the call tree.
+  Stops tracing and outputs the call tree collected since `tell/1`.
+
+  The entire trace is written as one buffered block, using the `:output` and
+  `:detail` options given to `tell/1` — so the tree never interleaves with other
+  IO from your code.
+
+  Always returns `:ok`. Warns and returns `:ok` if no trace is active on this
+  process, so a stray `stop/0` is harmless.
   """
+  @spec stop() :: :ok
   def stop do
     case Process.get(@collector_key) do
       nil ->

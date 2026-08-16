@@ -2,7 +2,7 @@ defmodule CodeStory.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/angeleahdaidone/code_story"
+  @source_url "https://github.com/angeleah/code_story"
 
   def project do
     [
@@ -38,15 +38,32 @@ defmodule CodeStory.MixProject do
 
   defp package do
     [
-      licenses: ["MIT"],
-      links: %{"GitHub" => @source_url}
+      name: "code_story",
+      licenses: ["Apache-2.0"],
+      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE),
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
+      }
     ]
   end
 
   defp docs do
     [
-      main: "CodeStory",
-      source_url: @source_url
+      main: "readme",
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      extras: ["README.md", "CHANGELOG.md", {"LICENSE", [title: "License"]}],
+      groups_for_modules: [
+        "Public API": [CodeStory, CodeStory.Encoder, CodeStory.Fold],
+        Internals: [
+          CodeStory.Args,
+          CodeStory.Collector,
+          CodeStory.Formatter,
+          CodeStory.Modules,
+          CodeStory.Tracer
+        ]
+      ]
     ]
   end
 end

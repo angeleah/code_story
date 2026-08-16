@@ -10,6 +10,12 @@ Every codebase has a story. CodeStory lets you read it. Drop `CodeStory.tell()` 
 - Exposing your code's vocabulary and catching ubiquitous language mismatches
 - Debugging by seeing exactly where data goes wrong
 
+## Requirements
+
+- **Elixir 1.15+**
+- **OTP 27+** — CodeStory uses the session-based `:trace` module introduced in
+  OTP 27. On older OTP releases, starting a trace will fail.
+
 ## Installation
 
 CodeStory is not yet published on Hex. (coming soon - still finishing some things up.) Install it from GitHub by adding it to your `mix.exs`:
@@ -154,4 +160,7 @@ Terminal output uses ANSI colors for readability:
 
 ## License
 
-MIT
+Copyright 2026 Angeleah Daidone
+
+Licensed under the [Apache License, Version 2.0](LICENSE). You may not use this
+project except in compliance with the License.
