@@ -18,11 +18,22 @@ Every codebase has a story. CodeStory lets you read it. Drop `CodeStory.tell()` 
 
 ## Installation
 
-CodeStory is not yet published on Hex. (coming soon - still finishing some things up.) Install it from GitHub by adding it to your `mix.exs`:
+Add `code_story` to your dependencies in `mix.exs`:
 
 ```elixir
 defp deps do
-  [{:code_story, github: "angeleahdaidone/code_story", only: :dev}]
+  [{:code_story, "~> 0.1.0", only: :dev}]
+end
+```
+
+Install it as `only: :dev` so that any `CodeStory.tell()` calls you forget to
+remove fail to compile in production rather than shipping.
+
+To track the development version instead, point at the repository:
+
+```elixir
+defp deps do
+  [{:code_story, github: "angeleah/code_story", only: :dev}]
 end
 ```
 
