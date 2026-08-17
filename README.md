@@ -55,7 +55,20 @@ No `require`, no `use`, no macros. Just `CodeStory.tell()` and `CodeStory.stop()
 
 ## Usage
 
-Place `CodeStory.tell()` before the code you want to understand and `CodeStory.stop()` after it:
+The quickest way is to **wrap the call you want to understand**. The trace prints,
+tracing cleans up on its own (no `stop()`), and your result flows through unchanged:
+
+```elixir
+invoice = CodeStory.tell(fn -> process_order(params) end)
+```
+
+This is ideal for unfamiliar code: you know the entry point even when you don't
+know where the flow ends. Wrapping is always safe — if tracing can't run for any
+reason, your function still runs and returns normally.
+
+Prefer to bracket a region by hand — a LiveView handler, or a span across several
+statements? Use the manual pair: `CodeStory.tell()` before, `CodeStory.stop()`
+after (`stop()` is what prints):
 
 ```elixir
 def handle_request(params) do
@@ -65,6 +78,8 @@ def handle_request(params) do
   result
 end
 ```
+
+Need the tree as data instead of a printed trace? See `CodeStory.narrate/2`.
 
 This outputs a nested call tree to the terminal:
 

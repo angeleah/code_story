@@ -7,9 +7,18 @@ defmodule CodeStory do
 
   ## Usage
 
+  Wrap the call you're curious about — the trace prints and your result flows
+  through, no `stop/0` needed:
+
+      invoice = CodeStory.tell(fn -> process_order(params) end)
+
+  Or bracket a region by hand when a single entry call won't express it:
+
       CodeStory.tell()
       # ... your code ...
       CodeStory.stop()
+
+  For the tree as data instead of a printed trace, see `narrate/2`.
 
   ## Options
 
@@ -41,46 +50,70 @@ defmodule CodeStory do
   @collector_key :code_story_collector
 
   @doc """
-  Starts tracing user-defined function calls on the current process.
+  Traces user-defined function calls and prints the call tree. Two forms.
 
-  Pair with `stop/0`, which prints the collected call tree:
+  ## Block form — `tell(fun)` / `tell(fun, opts)`
+
+  Wrap the entry call you want to understand. The trace prints, tracing is cleaned
+  up automatically (no `stop/0`), and `fun`'s own result is returned — so it's a
+  transparent wrapper you can drop around any expression:
+
+      invoice = CodeStory.tell(fn -> process_order(params) end)
+
+  This is the recommended form when surveying unfamiliar code: you know the *entry*
+  even when you don't know where the flow *ends*. It captures only the first
+  top-level call, so wrap a single entry call. It **never breaks the wrapped
+  code** — if a trace is already active, tracing fails to start, or the trace can't
+  be displayed, `fun` still runs and its result is still returned (with a warning).
+  Unlike `narrate/2` (which raises on an active trace), the block form warns and
+  continues.
+
+  ## Manual form — `tell()` / `tell(opts)` + `stop/0`
+
+  Bracket a region by hand (e.g. a LiveView handler, or a span across several
+  statements) when a single entry call won't express it:
 
       CodeStory.tell()
       result = process_order(params)
       CodeStory.stop()
 
-  Accepts the options documented in the [module docs](`CodeStory`) —
-  `:show_args`, `:output`, `:detail`, `:auto_boundary`, `:fold_repeats`, and
-  `:depth`. For example:
+  The manual form returns `:ok`, or `{:error, :already_tracing}` (with a warning)
+  if a trace is already active.
 
-      CodeStory.tell(detail: :outline)
+  Both forms accept the options in the [module docs](`CodeStory`) — `:show_args`,
+  `:output`, `:detail`, `:auto_boundary`, `:fold_repeats`, `:depth`:
+
+      CodeStory.tell(fn -> entry() end, detail: :outline)
       CodeStory.tell(detail: :novel, output: :file)
 
-  Returns `:ok`, or `{:error, :already_tracing}` (with a warning) if a trace is
-  already active on this process. For a non-printing, data-returning
-  alternative, see `narrate/2`.
+  For the tree as data instead of a printed trace, see `narrate/2`.
   """
+  @spec tell() :: :ok | {:error, term()}
   @spec tell(keyword()) :: :ok | {:error, term()}
-  def tell(opts \\ []) do
-    if Process.get(@collector_key) do
-      IO.warn("CodeStory: trace already active on this process")
-      {:error, :already_tracing}
-    else
-      opts =
-        Keyword.merge(
-          [
-            show_args: true,
-            output: :terminal,
-            detail: :short_story,
-            auto_boundary: true,
-            fold_repeats: true,
-            depth: :infinity
-          ],
-          opts
-        )
+  @spec tell((-> result)) :: result when result: var
+  @spec tell((-> result), keyword()) :: result when result: var
+  def tell(), do: do_manual_start([])
 
-      do_start(opts)
-    end
+  # arity 1 — all three clauses contiguous (Elixir warns on split same-arity clauses)
+  def tell(fun) when is_function(fun, 0), do: tell(fun, [])
+  def tell(opts) when is_list(opts), do: do_manual_start(opts)
+
+  def tell(other) do
+    raise ArgumentError,
+          "CodeStory.tell/1 expects a keyword list or a 0-arity function, got: #{inspect(other)}"
+  end
+
+  # arity 2
+  def tell(fun, opts) when is_function(fun, 0) and is_list(opts), do: do_tell_block(fun, opts)
+
+  def tell(fun, opts) when is_function(fun, 0) do
+    raise ArgumentError,
+          "CodeStory.tell/2 expects a keyword list as the second argument, got: #{inspect(opts)}"
+  end
+
+  def tell(fun, _opts) do
+    raise ArgumentError,
+          "CodeStory.tell/2 expects a 0-arity function as the first argument, got: #{inspect(fun)}"
   end
 
   @doc """
@@ -173,6 +206,140 @@ defmodule CodeStory do
   """
   @spec to_encodable([map()], keyword()) :: [map()]
   def to_encodable(tree, opts \\ []), do: CodeStory.Encoder.encode(tree, opts)
+
+  defp do_manual_start(opts) do
+    if Process.get(@collector_key) do
+      IO.warn("CodeStory: trace already active on this process")
+      {:error, :already_tracing}
+    else
+      do_start(merge_display_defaults(opts))
+    end
+  end
+
+  defp merge_display_defaults(opts) do
+    Keyword.merge(
+      [
+        show_args: true,
+        output: :terminal,
+        detail: :short_story,
+        auto_boundary: true,
+        fold_repeats: true,
+        depth: :infinity
+      ],
+      opts
+    )
+  end
+
+  # Block form: wrap `fun`, print its trace, clean up, return `fun`'s own result.
+  # Contract: NEVER break the wrapped code — an already-active trace, a start
+  # failure, or a display/write error must all still run `fun` and return its value.
+  defp do_tell_block(fun, opts) do
+    if Process.get(@collector_key) do
+      # A pre-existing trace's tracing is still on this process AND its collector
+      # may already have auto-frozen, so fun runs but may or may not be captured.
+      IO.warn(
+        "CodeStory: an existing trace is active on this process; " <>
+          "your function runs normally and may not be captured"
+      )
+
+      fun.()
+    else
+      opts = merge_display_defaults(opts)
+
+      case safe_start(opts) do
+        :ok ->
+          collector_pid = Process.get(@collector_key)
+
+          try do
+            result = fun.()
+
+            # Collect + render is best-effort: fetch_tree can :exit on a wedged
+            # collector, output_result can raise (File.write! / formatter). Neither
+            # may clobber a successful fun, so both are guarded (rescue AND catch).
+            try do
+              collector_pid |> fetch_tree() |> output_result(opts)
+            rescue
+              e ->
+                IO.warn(
+                  "CodeStory: trace collected but could not be displayed (#{Exception.message(e)})"
+                )
+            catch
+              :exit, reason ->
+                IO.warn("CodeStory: trace could not be collected (#{inspect(reason)})")
+
+              :throw, value ->
+                IO.warn("CodeStory: trace could not be collected (#{inspect(value)})")
+            end
+
+            result
+          after
+            CodeStory.Tracer.stop_tracing()
+            Process.delete(@collector_key)
+
+            if is_pid(collector_pid) and Process.alive?(collector_pid) do
+              GenServer.stop(collector_pid)
+            end
+          end
+
+        {:could_not_start, reason} ->
+          IO.warn(
+            "CodeStory: could not start tracing (#{inspect(reason)}); running your function untraced"
+          )
+
+          fun.()
+      end
+    end
+  end
+
+  @doc false
+  # Totalizes `do_start/1`: any non-:ok result, raise, exit, or throw becomes
+  # `{:could_not_start, reason}`. `start_fun` is injectable (default `&do_start/1`)
+  # so start-failure paths are testable without a mocking dependency. Uses a
+  # SEQUENCED block (not `cleanup && …`) — cleanup returns `nil` on a failed start,
+  # which `&&` would short-circuit into a CaseClauseError that breaks wrapped code.
+  @spec safe_start(keyword(), (keyword() -> :ok | {:error, term()})) ::
+          :ok | {:could_not_start, term()}
+  def safe_start(opts, start_fun \\ &do_start/1) do
+    case start_fun.(opts) do
+      :ok ->
+        :ok
+
+      other ->
+        cleanup_after_failed_start()
+        {:could_not_start, other}
+    end
+  rescue
+    e ->
+      cleanup_after_failed_start()
+      {:could_not_start, e}
+  catch
+    :exit, reason ->
+      cleanup_after_failed_start()
+      {:could_not_start, reason}
+
+    :throw, value ->
+      cleanup_after_failed_start()
+      {:could_not_start, value}
+  end
+
+  # Best-effort teardown of any partial state a failed start may have left.
+  # Self-totalizing: it runs inside `safe_start`'s rescue/catch arms (which are not
+  # themselves guarded), so a raise/exit here — e.g. a `GenServer.stop/1` :noproc
+  # TOCTOU — must not escape and break the wrapped code. Swallow everything.
+  defp cleanup_after_failed_start do
+    CodeStory.Tracer.stop_tracing()
+
+    case Process.get(@collector_key) do
+      pid when is_pid(pid) ->
+        Process.delete(@collector_key)
+        if Process.alive?(pid), do: GenServer.stop(pid)
+
+      _ ->
+        :ok
+    end
+  catch
+    _kind, _reason -> :ok
+  end
 
   defp do_start(opts) do
     modules = CodeStory.Modules.detect()
