@@ -15,7 +15,11 @@ defmodule CodeStory do
 
     * `:show_args` - when `true` (default), shows argument names and values;
       when `false`, shows values only
-    * `:output` - `:terminal` (default), `:file`, or `:both`
+    * `:output` - `:terminal` (default), `:file`, or `:both`. `:file` and
+      `:both` write to `code_story_trace.log` in the project root. Because a
+      trace records real argument and return values, that file can capture
+      secrets (passwords, API keys, tokens) or personal data in plaintext —
+      add it to your `.gitignore` and delete it when you are done with it.
     * `:detail` - `:outline` shows only function names and arg names (no values
       or returns) for inspecting call flow and boundaries;
       `:short_story` (default) shows names, truncated values, and returns;

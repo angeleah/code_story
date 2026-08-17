@@ -120,6 +120,12 @@ CodeStory.tell(show_args: false, output: :both)
   `:file` writes to `code_story_trace.log` in your project root (ANSI codes stripped).
   `:both` writes to terminal and file.
 
+  > **Add `code_story_trace.log` to your `.gitignore` before using `:file`.**
+  > A trace records real argument and return values, so tracing code that
+  > handles passwords, API keys, tokens, or personal data writes those values
+  > to the log in plaintext. Treat the file as sensitive and delete it when
+  > you're done reading it.
+
 - **`auto_boundary`** — treat Ecto repos as _boundary modules_: a repo call
   (e.g. `Repo.get!`) shows as a single node with its arguments and return, but the
   repo's internal Ecto plumbing is hidden. Default: `true`. Set to `false` to
