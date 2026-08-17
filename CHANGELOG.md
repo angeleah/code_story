@@ -13,8 +13,15 @@ Initial release.
 
 ### Added
 
-- `CodeStory.tell/1` and `CodeStory.stop/0` — start and stop a trace, printing a
-  nested call tree of user-defined function calls with named arguments and
+- `CodeStory.tell/1` and `CodeStory.tell/2` in block form — wrap a call
+  (`CodeStory.tell(fn -> process_order(params) end)`) to print its trace and get
+  the wrapped call's own result back. Tracing is cleaned up automatically, so no
+  `stop/0` is needed, and the wrapper never breaks the code it wraps: if tracing
+  cannot start or the trace cannot be displayed, the function still runs and
+  still returns its result.
+- `CodeStory.tell/0`, `CodeStory.tell/1`, and `CodeStory.stop/0` in manual form —
+  bracket a region by hand when a single entry call will not express it, printing
+  a nested call tree of user-defined function calls with named arguments and
   return values.
 - `CodeStory.narrate/2` — run a function while tracing and get back
   `{result, tree}` as data, without printing.
