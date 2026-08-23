@@ -349,4 +349,70 @@ defmodule CodeStory.CollectorTest do
       refute Process.alive?(pid)
     end
   end
+
+  describe "boundary tagging" do
+    # Reuses `boundary_collector/0` (boundaries: [Repo]) and `cast_events/2` from
+    # the "boundary modules" describe above.
+    test "tags a boundary-module entry call with boundary: true" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {Repo, :get!, [MyApp.User, 1]}},
+        {:return_from, {Repo, :get!, 2}, %{id: 1}}
+      ])
+
+      {:completed, [node], _} = GenServer.call(pid, :get_result)
+      assert node.boundary == true
+      assert node.children == []
+      GenServer.stop(pid)
+    end
+
+    test "a non-boundary call has no :boundary key" do
+      pid = boundary_collector()
+
+      cast_events(pid, [
+        {:call, {MyApp, :add, [1, 2]}},
+        {:return_from, {MyApp, :add, 2}, 3}
+      ])
+
+      {:completed, [node], _} = GenServer.call(pid, :get_result)
+      refute Map.has_key?(node, :boundary)
+      GenServer.stop(pid)
+    end
+
+    test "a boundary's interior calls are suppressed; only the entry is tagged" do
+      pid = boundary_collector()
+
+      # entry, then a Repo→Repo interior call (boundary already an ancestor)
+      cast_events(pid, [
+        {:call, {Repo, :get!, [MyApp.User, 1]}},
+        {:call, {Repo, :get!, [MyApp.User, 1, []]}},
+        {:return_from, {Repo, :get!, 3}, %{id: 1}},
+        {:return_from, {Repo, :get!, 2}, %{id: 1}}
+      ])
+
+      {:completed, [node], _} = GenServer.call(pid, :get_result)
+      assert node.boundary == true
+      assert node.children == []
+      GenServer.stop(pid)
+    end
+
+    test "a dunder fn on a boundary module is skipped, never tagged (cond order lock)" do
+      pid = boundary_collector()
+
+      # real entry wrapping a dunder call on the boundary module
+      cast_events(pid, [
+        {:call, {MyApp, :run, []}},
+        {:call, {Repo, :__adapter__, []}},
+        {:return_from, {Repo, :__adapter__, 0}, :adapter},
+        {:return_from, {MyApp, :run, 0}, :ok}
+      ])
+
+      {:completed, [node], _} = GenServer.call(pid, :get_result)
+      assert node.function == :run
+      # the dunder was skipped — no boundary node created as a child
+      assert node.children == []
+      GenServer.stop(pid)
+    end
+  end
 end

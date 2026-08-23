@@ -136,6 +136,16 @@ defmodule CodeStory.EncoderTest do
     end
   end
 
+  describe "encode/2 — boundary flag is dropped (whitelist)" do
+    test "a :boundary node encodes identically to one without the flag" do
+      with_flag = [Map.put(node(M, :f, [a: 1], :ok), :boundary, true)]
+      without = [node(M, :f, [a: 1], :ok)]
+
+      assert Encoder.encode(with_flag) == Encoder.encode(without)
+      refute Enum.any?(Encoder.encode(with_flag), &Map.has_key?(&1, :boundary))
+    end
+  end
+
   describe "encode/2 — detail" do
     test ":short_story truncates long values; :novel does not" do
       long = String.duplicate("x", 500)

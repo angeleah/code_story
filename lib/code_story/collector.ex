@@ -77,6 +77,11 @@ defmodule CodeStory.Collector do
           children: []
         }
 
+        # Tag a boundary *entry* call (the interior-suppress branch ran first, so
+        # only the outermost boundary call reaches here). The formatter renders a
+        # tagged node as an inline call signature instead of positional `arg1`s.
+        node = if mod in state.boundaries, do: Map.put(node, :boundary, true), else: node
+
         {:noreply, %{state | stack: [node | state.stack]}}
     end
   end

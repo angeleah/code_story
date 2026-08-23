@@ -63,6 +63,31 @@ defmodule CodeStory.Formatter do
     end)
   end
 
+  # A boundary call (e.g. an Ecto `Repo.*`) is a black box: render it as an inline
+  # call signature — `Mod.fun(v1, v2) => return` — showing argument VALUES and the
+  # return, not the (macro-generated, meaningless) positional names. Placed before
+  # the :outline/general clauses so it wins in both. Re-derives `inspect_opts` from
+  # `detail` because the :outline clause recurses with a hard-coded `[]`.
+  @spec format_node(map(), non_neg_integer(), boolean(), atom(), keyword(), any()) :: [String.t()]
+  defp format_node(%{boundary: true} = node, depth, show_args, detail, _inspect_opts, max_depth) do
+    opts = inspect_opts_for(detail)
+    name = format_function_name(node.module, node.function)
+    values = node.args |> Enum.map(fn {_name, v} -> inspect(v, opts) end) |> Enum.join(", ")
+
+    line =
+      "#{indent(depth * 2)}#{@blue}#{name}#{@reset}(#{values}) " <>
+        "#{format_return(node.return, opts)}#{count_suffix(node)}"
+
+    # Usually childless (interior suppressed). But the collector attaches a
+    # cross-module call made from inside the boundary (e.g. a custom `Ecto.Type`)
+    # as a child — render those rather than silently drop them (parity with the
+    # encoder, which keeps them). `opts` (re-derived) is passed so nested values
+    # truncate correctly even when this boundary was reached via the :outline path.
+    child_lines = format_nodes(node.children, depth + 1, show_args, detail, opts, max_depth)
+
+    [line | child_lines]
+  end
+
   defp format_node(node, depth, _show_args, :outline, _inspect_opts, max_depth) do
     func_indent = indent(depth * 2)
     arg_indent = indent(depth * 2 + 2)

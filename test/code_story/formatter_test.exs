@@ -471,6 +471,108 @@ defmodule CodeStory.FormatterTest do
     end
   end
 
+  describe "boundary signatures" do
+    defp boundary(fun, args, ret, extra \\ %{}) do
+      Map.merge(
+        %{
+          module: MyApp.Repo,
+          function: fun,
+          args: args,
+          return: ret,
+          children: [],
+          boundary: true
+        },
+        extra
+      )
+    end
+
+    test "renders an inline signature (values, not positional names) in one line" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      lines = String.split(plain, "\n")
+
+      assert Enum.at(lines, 1) == "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+      refute plain =~ "arg1"
+      refute plain =~ "arg2"
+    end
+
+    test ":outline still shows the boundary's values and return (not name-only)" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
+      plain = strip_ansi(Formatter.format([node], detail: :outline))
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+    end
+
+    test "values use compact opts even when the boundary is nested in :outline" do
+      # A boundary reached as a CHILD in :outline: the outline clause recurses with
+      # []; the boundary clause must re-derive compact opts, not fall to Elixir
+      # defaults (limit: 50 / printable_limit: 4096).
+      big_list = Enum.to_list(1..10)
+      long_str = String.duplicate("z", 80)
+      b = boundary(:all, [q: big_list, s: long_str], :ok)
+      parent = %{module: MyApp, function: :load, args: [x: 1], return: :ok, children: [b]}
+
+      outline = strip_ansi(Formatter.format([parent], detail: :outline))
+      short = strip_ansi(Formatter.format([parent], detail: :short_story))
+      novel = strip_ansi(Formatter.format([parent], detail: :novel))
+
+      assert outline =~ "..."
+      assert short =~ "..."
+      # novel shows the full list + string → no truncation marker anywhere
+      refute novel =~ "..."
+    end
+
+    test "a folded boundary renders the signature plus ×N (varies) after the return" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok, %{count: 2, varies: true})
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok ×2 (varies)"
+    end
+
+    test "a boundary with a nil return renders => ?" do
+      node = boundary(:insert!, [arg1: :x], nil)
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      assert plain =~ "MyApp.Repo.insert!(:x) => ?"
+    end
+
+    test "a boundary with no args renders Mod.fun()" do
+      node = boundary(:reset, [], :ok)
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      assert plain =~ "MyApp.Repo.reset() => :ok"
+    end
+
+    test "format_plain strips ANSI from a boundary signature" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
+      out = Formatter.format_plain([node], show_args: true)
+      refute out =~ "\e["
+      assert out =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+    end
+
+    test "a boundary WITH children renders the signature then its children (no silent drop)" do
+      child = %{
+        module: MyApp.CustomType,
+        function: :load,
+        args: [raw: "x"],
+        return: :ok,
+        children: []
+      }
+
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], %{id: 1}, %{children: [child]})
+
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) =>"
+      # the cross-module child is rendered, not silently dropped
+      assert plain =~ "MyApp.CustomType.load"
+      assert plain =~ "raw: \"x\""
+    end
+
+    test "non-boundary nodes are unchanged (no signature form)" do
+      node = %{module: MyApp, function: :add, args: [num1: 3, num2: 2], return: 5, children: []}
+      plain = strip_ansi(Formatter.format([node], detail: :outline))
+      # outline: name-only, no values, no return, no inline "(...) =>"
+      refute plain =~ "=>"
+      refute plain =~ "(3, 2)"
+    end
+  end
+
   defp strip_ansi(string) do
     String.replace(string, ~r/\e\[[0-9;]*m/, "")
   end

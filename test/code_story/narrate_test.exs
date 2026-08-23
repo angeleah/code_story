@@ -91,6 +91,10 @@ defmodule CodeStory.NarrateTest do
       {_r, hidden} = CodeStory.narrate(fn -> SampleApp.fetch_via_repo(7) end)
       refute :build_result in functions(hidden)
 
+      # the repo call itself is tagged a boundary in the raw tree
+      repo_node = Enum.find(all_nodes(hidden), &(&1.function == :get))
+      assert repo_node.boundary == true
+
       {_r, shown} =
         CodeStory.narrate(fn -> SampleApp.fetch_via_repo(7) end, auto_boundary: false)
 
