@@ -43,7 +43,7 @@ defmodule CodeStory.Encoder do
 
   defp encode_node(node, level, detail, max_depth) do
     base = %{
-      module: module_string(node.module),
+      module: CodeStory.ModuleName.short(node.module),
       function: Atom.to_string(node.function),
       arity: length(node.args),
       args: encode_args(node.args, detail),
@@ -100,12 +100,6 @@ defmodule CodeStory.Encoder do
 
   defp inspect_value(value, detail),
     do: CodeStory.CleanInspect.inspect(value, CodeStory.CleanInspect.opts_for(detail))
-
-  defp module_string(module) do
-    module
-    |> Atom.to_string()
-    |> String.replace_leading("Elixir.", "")
-  end
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

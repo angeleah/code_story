@@ -4,6 +4,11 @@ defmodule CodeStory.CleanInspect do
   `__meta__: #Ecto.Schema.Metadata<…>` and `#Ecto.Association.NotLoaded<…>` — so a
   trace shows `%Order{id: 12, status: "paid", …}` instead of the full Ecto internals.
 
+  One value-shaped exception precedes the string cleaning: `inspect/2` first
+  delegates a top-level `Ecto.Query` value to `CodeStory.QueryLabel`, which renders
+  it as a compact `#Ecto.Query<Schema>` label (at the summary detail levels only).
+  Everything else follows the string-cleaning path below.
+
   We clean the **inspected string**, not the value: removing `__meta__` from the
   value pre-inspect turns the struct into a plain map (`%{…, __struct__: Mod}`),
   losing the `%Mod{…}` name. CodeStory has no Ecto dependency — detection is purely
@@ -48,6 +53,21 @@ defmodule CodeStory.CleanInspect do
   """
   @spec inspect(term(), keyword()) :: String.t()
   def inspect(value, opts) do
+    # A top-level Ecto.Query value is labelled compactly (schema summary) at the
+    # summary detail levels only. `:novel` is the ONLY level whose opts carry
+    # `limit: :infinity` (see `opts_for/1`), so the gate keys on that deliberately:
+    # `:novel` keeps the full query. Classify and return BEFORE any `Kernel.inspect`,
+    # and never route the label through `strip_ecto_noise/1`.
+    compact? = Keyword.get(opts, :limit) != :infinity
+
+    case compact? && CodeStory.QueryLabel.label(value) do
+      label when is_binary(label) -> label
+      _ -> clean_inspect(value, opts)
+    end
+  end
+
+  @spec clean_inspect(term(), keyword()) :: String.t()
+  defp clean_inspect(value, opts) do
     raw = Kernel.inspect(value, opts)
 
     # Bump the `:limit` by 1 and re-inspect ONLY when an Ecto `__meta__` field is

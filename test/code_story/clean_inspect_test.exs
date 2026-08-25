@@ -123,4 +123,53 @@ defmodule CodeStory.CleanInspectTest do
       refute CleanInspect.inspect(v, []) =~ "Ecto.Schema.Metadata"
     end
   end
+
+  describe "inspect/2 — Ecto.Query compaction wiring" do
+    test "a query at a compact limit renders the QueryLabel, not the raw query" do
+      q = query({"regs", EctoIsh})
+      out = CleanInspect.inspect(q, limit: 3)
+      assert out == "#Ecto.Query<CodeStory.TestSupport.EctoIsh>"
+    end
+
+    test "the same query at limit: :infinity is NOT compacted (routes to the full path)" do
+      q = query({"regs", EctoIsh})
+      out = CleanInspect.inspect(q, limit: :infinity)
+      # Gate-level fact: :infinity does not produce the compact QueryLabel. (The real
+      # :novel rendering of a genuine %Ecto.Query{} is covered by the integration test;
+      # here the fixture is a plain map, so we assert only the gate, not its inspect form.)
+      refute out == "#Ecto.Query<CodeStory.TestSupport.EctoIsh>"
+      refute out =~ "#Ecto.Query<CodeStory"
+    end
+
+    test "bare opts with no :limit key compact (nil != :infinity)" do
+      q = query({"regs", EctoIsh})
+      assert CleanInspect.inspect(q, []) == "#Ecto.Query<CodeStory.TestSupport.EctoIsh>"
+    end
+
+    test "non-query values are unaffected — the __meta__ path still runs" do
+      v = %EctoIsh{
+        __meta__: %FakeMeta{state: :loaded, source: "fakes"},
+        id: 1,
+        status: "paid",
+        kind: "individual"
+      }
+
+      out = CleanInspect.inspect(v, limit: 3)
+      refute out =~ "Ecto.Schema.Metadata"
+      assert out =~ "CodeStory.TestSupport.EctoIsh"
+      # a plain value is byte-identical to Kernel.inspect
+      assert CleanInspect.inspect(%{a: 1, b: 2}, limit: 3) ==
+               Kernel.inspect(%{a: 1, b: 2}, limit: 3)
+    end
+
+    test "proxy invariant: :novel is the only detail level whose opts carry limit: :infinity" do
+      assert Keyword.get(CleanInspect.opts_for(:novel), :limit) == :infinity
+
+      for detail <- [:short_story, :outline, :anything_else] do
+        refute Keyword.get(CleanInspect.opts_for(detail), :limit) == :infinity
+      end
+    end
+  end
+
+  defp query(source), do: %{__struct__: Ecto.Query, from: %{source: source}}
 end

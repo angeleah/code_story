@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ecto queries render compactly in traces. An `Ecto.Query` argument to a boundary
+  call now reads as `#Ecto.Query<Confab.Registration.Registration>` (the queried
+  schema) at the summary detail levels, instead of the full
+  `#Ecto.Query<from r0 in …, where: …, order_by: …>` dump; string-table and
+  subquery sources render `#Ecto.Query<"table">` / `#Ecto.Query<subquery>`. The
+  full query is preserved at `:novel`. No Ecto dependency — detection is structural.
 - Ecto struct noise is stripped from inspected values in the trace — a schema's
   `__meta__: #Ecto.Schema.Metadata<…>` bookkeeping and unloaded associations
   (`#Ecto.Association.NotLoaded<…>`) are removed, so a value reads as

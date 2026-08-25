@@ -187,12 +187,7 @@ defmodule CodeStory.Formatter do
   end
 
   defp format_function_name(module, function) do
-    mod_name =
-      module
-      |> Atom.to_string()
-      |> String.replace_leading("Elixir.", "")
-
-    "#{mod_name}.#{function}"
+    "#{CodeStory.ModuleName.short(module)}.#{function}"
   end
 
   defp indent(n), do: String.duplicate(" ", n)
