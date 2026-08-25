@@ -12,16 +12,13 @@ defmodule CodeStory.Formatter do
   @dim "\e[90m"
   @reset "\e[0m"
 
-  @compact_inspect_opts [limit: 3, printable_limit: 50, width: 80]
-  @full_inspect_opts [limit: :infinity, printable_limit: :infinity]
-
   @doc """
   Formats the call tree with ANSI colors.
   """
   def format(tree, opts) do
     detail = Keyword.get(opts, :detail, :short_story)
     show_args = Keyword.get(opts, :show_args, true)
-    inspect_opts = inspect_opts_for(detail)
+    inspect_opts = CodeStory.CleanInspect.opts_for(detail)
     max_depth = max_depth_for(opts)
 
     lines =
@@ -42,9 +39,6 @@ defmodule CodeStory.Formatter do
     |> format(opts)
     |> strip_ansi()
   end
-
-  defp inspect_opts_for(:novel), do: @full_inspect_opts
-  defp inspect_opts_for(_), do: @compact_inspect_opts
 
   # `:depth` caps rendered nesting. Any number is accepted: floats are truncated
   # to an integer and values `< 1` clamp to 1. `:infinity` (and any non-number)
@@ -70,9 +64,9 @@ defmodule CodeStory.Formatter do
   # `detail` because the :outline clause recurses with a hard-coded `[]`.
   @spec format_node(map(), non_neg_integer(), boolean(), atom(), keyword(), any()) :: [String.t()]
   defp format_node(%{boundary: true} = node, depth, show_args, detail, _inspect_opts, max_depth) do
-    opts = inspect_opts_for(detail)
+    opts = CodeStory.CleanInspect.opts_for(detail)
     name = format_function_name(node.module, node.function)
-    values = node.args |> Enum.map(fn {_name, v} -> inspect(v, opts) end) |> Enum.join(", ")
+    values = node.args |> Enum.map(fn {_name, v} -> do_inspect(v, opts) end) |> Enum.join(", ")
 
     line =
       "#{indent(depth * 2)}#{@blue}#{name}#{@reset}(#{values}) " <>
@@ -124,7 +118,7 @@ defmodule CodeStory.Formatter do
     if node.children != [] do
       # Return at same level as function name
       return_line =
-        "#{func_indent}#{@green}=> #{display_name} returned #{inspect(node.return, inspect_opts)}#{@reset}"
+        "#{func_indent}#{@green}=> #{display_name} returned #{do_inspect(node.return, inspect_opts)}#{@reset}"
 
       # At the cap, replace the interior with a single marker line (no recursion).
       body =
@@ -164,20 +158,20 @@ defmodule CodeStory.Formatter do
 
   defp format_args(args, arg_indent, true, inspect_opts) do
     Enum.map(args, fn {name, value} ->
-      "#{arg_indent}#{@yellow}#{name}:#{@reset} #{inspect(value, inspect_opts)}"
+      "#{arg_indent}#{@yellow}#{name}:#{@reset} #{do_inspect(value, inspect_opts)}"
     end)
   end
 
   defp format_args(args, arg_indent, false, inspect_opts) do
     Enum.map(args, fn {_name, value} ->
-      "#{arg_indent}#{inspect(value, inspect_opts)}"
+      "#{arg_indent}#{do_inspect(value, inspect_opts)}"
     end)
   end
 
   defp format_return(nil, _inspect_opts), do: "#{@green}=> ?#{@reset}"
 
   defp format_return(value, inspect_opts),
-    do: "#{@green}=> #{inspect(value, inspect_opts)}#{@reset}"
+    do: "#{@green}=> #{do_inspect(value, inspect_opts)}#{@reset}"
 
   # A ` ×N` (or ` ×N (varies)`) suffix for a folded node; "" for an ordinary node.
   @spec count_suffix(map()) :: String.t()
@@ -202,6 +196,11 @@ defmodule CodeStory.Formatter do
   end
 
   defp indent(n), do: String.duplicate(" ", n)
+
+  # Single chokepoint for every value inspection — strips Ecto `__meta__`/`NotLoaded`
+  # noise. Every value must be rendered through here, never a raw Kernel call
+  # (guarded by test/code_story/no_raw_inspect_test.exs).
+  defp do_inspect(value, opts), do: CodeStory.CleanInspect.inspect(value, opts)
 
   defp strip_ansi(string) do
     String.replace(string, ~r/\e\[[0-9;]*m/, "")

@@ -573,6 +573,63 @@ defmodule CodeStory.FormatterTest do
     end
   end
 
+  describe "Ecto noise cleanup wiring" do
+    alias CodeStory.TestSupport.{EctoIsh, FakeMeta}
+
+    defp ecto_value do
+      %EctoIsh{
+        __meta__: %FakeMeta{state: :loaded, source: "orders"},
+        id: 12,
+        status: "paid",
+        kind: "x"
+      }
+    end
+
+    test "strips noise on a non-leaf return (site 127) and arg values, short_story + novel" do
+      for detail <- [:short_story, :novel] do
+        tree = [
+          %{
+            module: MyApp,
+            function: :parent,
+            args: [order: ecto_value()],
+            return: ecto_value(),
+            children: [%{module: MyApp, function: :child, args: [], return: :ok, children: []}]
+          }
+        ]
+
+        out = strip_ansi(Formatter.format(tree, detail: detail))
+        refute out =~ "Ecto.Schema.Metadata"
+        assert out =~ "EctoIsh"
+        assert out =~ "=> MyApp.parent returned"
+      end
+    end
+
+    test "strips noise on a leaf return (site 180)" do
+      tree = [%{module: MyApp, function: :f, args: [], return: ecto_value(), children: []}]
+      out = strip_ansi(Formatter.format(tree, detail: :short_story))
+      refute out =~ "Ecto.Schema.Metadata"
+      assert out =~ "EctoIsh"
+    end
+
+    test "strips noise in a boundary signature (site 75; :outline shows values)" do
+      tree = [
+        %{
+          module: MyApp.Repo,
+          function: :get!,
+          args: [q: MyApp.User, id: 1],
+          return: ecto_value(),
+          children: [],
+          boundary: true
+        }
+      ]
+
+      out = strip_ansi(Formatter.format(tree, detail: :outline))
+      refute out =~ "Ecto.Schema.Metadata"
+      assert out =~ "MyApp.Repo.get!("
+      assert out =~ "EctoIsh"
+    end
+  end
+
   defp strip_ansi(string) do
     String.replace(string, ~r/\e\[[0-9;]*m/, "")
   end

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ecto struct noise is stripped from inspected values in the trace — a schema's
+  `__meta__: #Ecto.Schema.Metadata<…>` bookkeeping and unloaded associations
+  (`#Ecto.Association.NotLoaded<…>`) are removed, so a value reads as
+  `%Order{id: 12, status: "paid", …}` instead of the full Ecto internals. The
+  `%Mod{…}` struct name is preserved, and it works with no Ecto dependency —
+  detection is purely string-shaped.
+
 ## [0.1.0]
 
 Initial release.

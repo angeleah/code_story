@@ -136,6 +136,26 @@ defmodule CodeStory.EncoderTest do
     end
   end
 
+  describe "encode/2 — Ecto noise stripped from values" do
+    alias CodeStory.TestSupport.{EctoIsh, FakeMeta}
+
+    test "to_encodable strips __meta__ from an arg value and the return, keeps the name" do
+      v = %EctoIsh{
+        __meta__: %FakeMeta{state: :loaded, source: "orders"},
+        id: 12,
+        status: "paid",
+        kind: "x"
+      }
+
+      tree = [node(M, :f, [order: v], v)]
+      assert [enc] = Encoder.encode(tree)
+
+      refute hd(enc.args).value =~ "Ecto.Schema.Metadata"
+      refute enc.return =~ "Ecto.Schema.Metadata"
+      assert enc.return =~ "EctoIsh"
+    end
+  end
+
   describe "encode/2 — boundary flag is dropped (whitelist)" do
     test "a :boundary node encodes identically to one without the flag" do
       with_flag = [Map.put(node(M, :f, [a: 1], :ok), :boundary, true)]

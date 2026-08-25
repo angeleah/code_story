@@ -19,10 +19,6 @@ defmodule CodeStory.Encoder do
       any other value (`:short_story`, `:outline`) uses the compact inspect opts.
   """
 
-  # Kept in sync with CodeStory.Formatter's @compact_inspect_opts / @full_inspect_opts.
-  @compact_inspect_opts [limit: 3, printable_limit: 50, width: 80]
-  @full_inspect_opts [limit: :infinity, printable_limit: :infinity]
-
   @type node_map :: %{
           required(:module) => module(),
           required(:function) => atom(),
@@ -102,8 +98,8 @@ defmodule CodeStory.Encoder do
   defp levels_below(%{children: children}),
     do: 1 + Enum.max(Enum.map(children, &levels_below/1))
 
-  defp inspect_value(value, :novel), do: inspect(value, @full_inspect_opts)
-  defp inspect_value(value, _detail), do: inspect(value, @compact_inspect_opts)
+  defp inspect_value(value, detail),
+    do: CodeStory.CleanInspect.inspect(value, CodeStory.CleanInspect.opts_for(detail))
 
   defp module_string(module) do
     module
