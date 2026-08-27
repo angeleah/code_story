@@ -746,7 +746,7 @@ defmodule CodeStory.FormatterTest do
                "MyApp.process"
     end
 
-    test "blank-line rule: all-inline children → no blanks; a multi-line child → blanks kept" do
+    test "an inline non-leaf never adds blank separators around its children" do
       tight = [
         %{
           module: MyApp,
@@ -779,9 +779,11 @@ defmodule CodeStory.FormatterTest do
         }
       ]
 
-      # parent p(a: 1) fits inline; child c stacks (big novel struct) → blanks kept
-      assert strip_ansi(Formatter.format(loose, detail: :novel, show_args: true)) =~
-               "MyApp.p(a: 1)\n\n  MyApp.c\n"
+      # parent p(a: 1) fits inline; child c stacks (big novel struct) — the inline
+      # parent still adds NO blank separators (dense, one clean indented tree).
+      out = strip_ansi(Formatter.format(loose, detail: :novel, show_args: true))
+      assert out =~ "MyApp.p(a: 1)\n  MyApp.c\n"
+      refute out =~ "MyApp.p(a: 1)\n\n"
     end
 
     test "an inline non-leaf at the depth cap shows the marker between signature and return" do

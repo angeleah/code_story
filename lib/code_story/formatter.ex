@@ -160,22 +160,17 @@ defmodule CodeStory.Formatter do
     sig_line = "#{func_indent}#{signature(node, arg_mode, value_strings)}#{count_suffix(node)}"
 
     if fits?(sig_line, ropts.width) do
-      # Render children as a list-of-lists so we can tell whether any renders
-      # multi-line; keep the blank separators only then, else omit them (denser).
-      child_lists =
+      # Inline non-leaf: signature line, children nested directly beneath (no blank
+      # separators — the whole trace reads as one dense indented tree), return at the
+      # bottom.
+      body =
         if show_children?(depth, ropts.max_depth) do
-          Enum.map(node.children, fn c -> format_node(c, depth + 1, ropts) end)
+          format_nodes(node.children, depth + 1, ropts)
         else
-          [[marker_line(depth, node)]]
+          [marker_line(depth, node)]
         end
 
-      body = Enum.concat(child_lists)
-
-      if Enum.any?(child_lists, &match?([_, _ | _], &1)) do
-        [sig_line] ++ [""] ++ body ++ [""] ++ [return_line]
-      else
-        [sig_line] ++ body ++ [return_line]
-      end
+      [sig_line] ++ body ++ [return_line]
     else
       arg_lines = stacked_args(node.args, value_strings, indent(depth * 2 + 2), arg_mode)
 
