@@ -57,48 +57,44 @@ defmodule CodeStory.FormatterTest do
   ]
 
   describe "format/2 show_args: true" do
-    test "formats a simple leaf call with module and function name" do
+    test "formats a simple leaf call as an inline signature" do
       output = Formatter.format(@simple_tree, show_args: true)
       plain = strip_ansi(output)
       lines = String.split(plain, "\n")
 
       assert Enum.at(lines, 0) == "--- CodeStory Trace ---"
-      assert Enum.at(lines, 1) == "MyApp.add"
-      assert Enum.at(lines, 2) == "  num1: 3"
-      assert Enum.at(lines, 3) == "  num2: 2"
-      assert Enum.at(lines, 4) == "=> 5"
-      assert Enum.at(lines, 5) == "--- End Trace ---"
+      assert Enum.at(lines, 1) == "MyApp.add(num1: 3, num2: 2) => 5"
+      assert Enum.at(lines, 2) == "--- End Trace ---"
     end
 
-    test "formats nested calls with module names and blank line separators" do
+    test "formats nested calls: inline parent signature, inline children, bottom return" do
       output = Formatter.format(@nested_tree, show_args: true)
       plain = strip_ansi(output)
 
-      # Children at same indent as args (2 spaces), with module prefix
-      assert plain =~ "  num2: 2\n\n  MyApp.add\n"
-      # Blank line before return, return at function's level with module prefix
-      assert plain =~ "  => 20\n\n=> MyApp.add_sub_mult returned 20"
+      assert plain =~ "MyApp.add_sub_mult(num1: 3, num2: 2)\n"
+      # children are inline leaves, indented under the signature
+      assert plain =~ "  MyApp.add(num1: 3, num2: 2) => 5\n"
+      assert plain =~ "  MyApp.mult(num1: 4, num2: 5) => 20\n"
+      # non-leaf return still on its own bottom line
+      assert plain =~ "=> MyApp.add_sub_mult returned 20"
     end
   end
 
   describe "format/2 non-show_args: true" do
-    test "shows values only without names" do
+    test "shows values only without names (inline positional)" do
       output = Formatter.format(@simple_tree, show_args: false)
       plain = strip_ansi(output)
 
-      assert plain =~ "MyApp.add\n"
-      assert plain =~ "  3\n"
-      assert plain =~ "  2\n"
+      assert plain =~ "MyApp.add(3, 2) => 5"
       refute plain =~ "num1:"
     end
 
-    test "nested show_args: false" do
+    test "nested show_args: false (inline positional)" do
       output = Formatter.format(@nested_tree, show_args: false)
       plain = strip_ansi(output)
 
-      assert plain =~ "MyApp.add_sub_mult\n"
-      assert plain =~ "  MyApp.add\n"
-      assert plain =~ "  => 5"
+      assert plain =~ "MyApp.add_sub_mult(3, 2)\n"
+      assert plain =~ "  MyApp.add(3, 2) => 5\n"
     end
   end
 
@@ -236,16 +232,14 @@ defmodule CodeStory.FormatterTest do
   end
 
   describe "format/2 detail: :outline shows only function names and arg names" do
-    test "simple leaf shows function and arg names without values or return" do
+    test "simple leaf shows an inline names-only signature, no values or return" do
       output = Formatter.format(@simple_tree, detail: :outline)
       plain = strip_ansi(output)
       lines = String.split(plain, "\n")
 
       assert Enum.at(lines, 0) == "--- CodeStory Trace ---"
-      assert Enum.at(lines, 1) == "MyApp.add"
-      assert Enum.at(lines, 2) == "  num1"
-      assert Enum.at(lines, 3) == "  num2"
-      assert Enum.at(lines, 4) == "--- End Trace ---"
+      assert Enum.at(lines, 1) == "MyApp.add(num1, num2)"
+      assert Enum.at(lines, 2) == "--- End Trace ---"
       refute plain =~ "=>"
       refute plain =~ ": 3"
       refute plain =~ ": 2"
@@ -279,7 +273,7 @@ defmodule CodeStory.FormatterTest do
 
       plain = strip_ansi(Formatter.format(tree, show_args: true))
       lines = String.split(plain, "\n")
-      assert Enum.at(lines, 1) == "MyApp.add ×98"
+      assert Enum.at(lines, 1) == "MyApp.add(num1: 3, num2: 2) => 5 ×98"
     end
 
     test "a varies node renders ×N (varies)" do
@@ -297,7 +291,7 @@ defmodule CodeStory.FormatterTest do
 
       plain = strip_ansi(Formatter.format(tree, show_args: true))
       lines = String.split(plain, "\n")
-      assert Enum.at(lines, 1) == "MyApp.add ×98 (varies)"
+      assert Enum.at(lines, 1) == "MyApp.add(num1: 3, num2: 2) => 5 ×98 (varies)"
     end
 
     test "a node without count renders exactly as before (regression)" do
@@ -326,7 +320,7 @@ defmodule CodeStory.FormatterTest do
       tree = [%{module: MyApp, function: :add, args: [], return: 5, children: [], count: 98}]
       out = Formatter.format_plain(tree, show_args: true)
       refute out =~ "\e["
-      assert out =~ "MyApp.add ×98"
+      assert out =~ "MyApp.add() => 5 ×98"
     end
 
     test ":outline detail also renders ×N on the function line" do
@@ -343,7 +337,7 @@ defmodule CodeStory.FormatterTest do
 
       plain = strip_ansi(Formatter.format(tree, detail: :outline))
       lines = String.split(plain, "\n")
-      assert Enum.at(lines, 1) == "MyApp.add ×98"
+      assert Enum.at(lines, 1) == "MyApp.add(num1, num2) ×98"
     end
   end
 
@@ -430,7 +424,7 @@ defmodule CodeStory.FormatterTest do
       ]
 
       plain = strip_ansi(Formatter.format(folded, show_args: true, depth: 1))
-      assert plain =~ "MyApp.deliver ×5 (varies)"
+      assert plain =~ "MyApp.deliver(id: 1) ×5 (varies)"
       assert plain =~ "id: 1"
       assert plain =~ "more level"
       assert plain =~ "=> MyApp.deliver returned :ok"
@@ -627,6 +621,174 @@ defmodule CodeStory.FormatterTest do
       refute out =~ "Ecto.Schema.Metadata"
       assert out =~ "MyApp.Repo.get!("
       assert out =~ "EctoIsh"
+    end
+  end
+
+  describe "inline call signatures" do
+    defp lines(output), do: output |> strip_ansi() |> String.split("\n")
+
+    test "fits?: at == width the call inlines; one char over it stacks" do
+      node = [%{module: MyApp, function: :f, args: [a: 1], return: 2, children: []}]
+      line = "MyApp.f(a: 1) => 2"
+      w = String.length(line)
+
+      inline = lines(Formatter.format(node, width: w, show_args: true))
+      assert Enum.at(inline, 1) == line
+
+      stacked = lines(Formatter.format(node, width: w - 1, show_args: true))
+      assert Enum.at(stacked, 1) == "MyApp.f"
+      assert Enum.at(stacked, 2) == "  a: 1"
+      assert Enum.at(stacked, 3) == "=> 2"
+    end
+
+    test "an over-width leaf falls back to the classic stacked layout" do
+      node = [
+        %{module: MyApp, function: :process, args: [tag: "hello"], return: :ok, children: []}
+      ]
+
+      out = lines(Formatter.format(node, width: 5, show_args: true))
+      assert Enum.at(out, 1) == "MyApp.process"
+      assert Enum.at(out, 2) == "  tag: \"hello\""
+      assert Enum.at(out, 3) == "=> :ok"
+    end
+
+    test "a nil return inline renders => ? (not => nil) and stays green" do
+      node = [%{module: MyApp, function: :f, args: [x: 1], return: nil, children: []}]
+      out = Formatter.format(node, show_args: true)
+
+      assert strip_ansi(out) =~ "MyApp.f(x: 1) => ?"
+      refute strip_ansi(out) =~ "=> nil"
+      assert out =~ "#{IO.ANSI.green()}=> ?#{IO.ANSI.reset()}"
+    end
+
+    test "arg modes: named (show_args), positional (no show_args), names-only (:outline)" do
+      node = [%{module: MyApp, function: :f, args: [a: 1, b: 2], return: :ok, children: []}]
+
+      assert strip_ansi(Formatter.format(node, show_args: true)) =~ "MyApp.f(a: 1, b: 2) => :ok"
+      assert strip_ansi(Formatter.format(node, show_args: false)) =~ "MyApp.f(1, 2) => :ok"
+
+      outline = strip_ansi(Formatter.format(node, detail: :outline))
+      assert outline =~ "MyApp.f(a, b)"
+      refute outline =~ "=>"
+    end
+
+    test ":outline inline non-leaf: signature + children, no return line" do
+      tree = [
+        %{
+          module: MyApp,
+          function: :parent,
+          args: [a: 1],
+          return: :r,
+          children: [%{module: MyApp, function: :child, args: [b: 2], return: :c, children: []}]
+        }
+      ]
+
+      plain = strip_ansi(Formatter.format(tree, detail: :outline))
+      assert plain =~ "MyApp.parent(a)\n"
+      assert plain =~ "  MyApp.child(b)"
+      refute plain =~ "=>"
+      refute plain =~ "returned"
+    end
+
+    test ":novel: a big struct arg exceeds the budget and stacks" do
+      big = %{
+        __struct__: MyApp.User,
+        name: "Alice Example",
+        email: "alice@example.com",
+        address: "123 Main Street",
+        phone: "555-123-4567",
+        role: :administrator
+      }
+
+      node = [%{module: MyApp, function: :process, args: [user: big], return: :ok, children: []}]
+      out = lines(Formatter.format(node, detail: :novel, show_args: true))
+      assert Enum.at(out, 1) == "MyApp.process"
+      assert Enum.any?(out, &(&1 =~ "  user: "))
+    end
+
+    test "width_for default 100 applies when :width is omitted (direct format/2)" do
+      # a call that fits <= 100 inlines with no :width passed
+      node = [%{module: MyApp, function: :f, args: [a: 1], return: 2, children: []}]
+      assert strip_ansi(Formatter.format(node, [])) =~ "MyApp.f(a: 1) => 2"
+
+      # a call whose line exceeds 100 must STACK with no :width — proves the default
+      # is actually applied. (A missing default would leave width nil, and Elixir's
+      # `n <= nil` is true, so everything would spuriously inline.)
+      long = [
+        %{
+          module: MyApp,
+          function: :process,
+          args: [tag: String.duplicate("x", 90)],
+          return: :ok,
+          children: []
+        }
+      ]
+
+      assert Enum.at(lines(Formatter.format(long, detail: :novel, show_args: true)), 1) ==
+               "MyApp.process"
+    end
+
+    test ":width override flips the inline/stacked decision" do
+      node = [
+        %{
+          module: MyApp,
+          function: :process,
+          args: [tag: "hello world"],
+          return: :ok,
+          children: []
+        }
+      ]
+
+      assert Enum.at(lines(Formatter.format(node, width: 200, show_args: true)), 1) ==
+               "MyApp.process(tag: \"hello world\") => :ok"
+
+      assert Enum.at(lines(Formatter.format(node, width: 10, show_args: true)), 1) ==
+               "MyApp.process"
+    end
+
+    test "blank-line rule: all-inline children → no blanks; a multi-line child → blanks kept" do
+      tight = [
+        %{
+          module: MyApp,
+          function: :p,
+          args: [a: 1],
+          return: :r,
+          children: [%{module: MyApp, function: :c, args: [b: 2], return: :cc, children: []}]
+        }
+      ]
+
+      assert strip_ansi(Formatter.format(tight, show_args: true)) =~
+               "MyApp.p(a: 1)\n  MyApp.c(b: 2) => :cc\n=> MyApp.p returned :r"
+
+      big = %{
+        __struct__: MyApp.User,
+        name: "Alice Example",
+        email: "alice@example.com",
+        address: "123 Main Street",
+        phone: "555-123-4567",
+        role: :administrator
+      }
+
+      loose = [
+        %{
+          module: MyApp,
+          function: :p,
+          args: [a: 1],
+          return: :r,
+          children: [%{module: MyApp, function: :c, args: [user: big], return: :cc, children: []}]
+        }
+      ]
+
+      # parent p(a: 1) fits inline; child c stacks (big novel struct) → blanks kept
+      assert strip_ansi(Formatter.format(loose, detail: :novel, show_args: true)) =~
+               "MyApp.p(a: 1)\n\n  MyApp.c\n"
+    end
+
+    test "an inline non-leaf at the depth cap shows the marker between signature and return" do
+      out = lines(Formatter.format(@deep_tree, show_args: true, depth: 1))
+      assert Enum.at(out, 1) == "MyApp.a(x: 1)"
+      assert Enum.at(out, 2) == "  … (3 more levels)"
+      assert Enum.at(out, 3) == "=> MyApp.a returned :ra"
     end
   end
 

@@ -62,8 +62,7 @@ defmodule CodeStory.IntegrationTest do
     test "show_args: false shows values only" do
       content = traced_run_to_file(fn -> SampleApp.add(3, 2) end, show_args: false)
 
-      assert content =~ "add\n"
-      assert content =~ "  3\n"
+      assert content =~ "add(3, 2) => 5"
       refute content =~ "num1:"
     end
 

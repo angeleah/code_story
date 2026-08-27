@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- User-defined function calls now render as a compact inline signature —
+  `Mod.fun(name: value, …) => return` on one line — when the line fits the new
+  `:width` budget (default 100), the same signature style boundary (`Repo.*`)
+  calls already use. Longer calls fall back to the previous stacked layout, so a
+  trace mixes inline (small calls) and stacked (big ones). `:width` is
+  configurable per trace (`CodeStory.tell(fn -> … end, width: 120)`).
 - Ecto queries render compactly in traces. An `Ecto.Query` argument to a boundary
   call now reads as `#Ecto.Query<Confab.Registration.Registration>` (the queried
   schema) at the summary detail levels, instead of the full

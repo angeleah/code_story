@@ -45,6 +45,11 @@ defmodule CodeStory do
       integer (`depth: 1` shows the entry call only; `depth: 2` adds its direct
       children; etc.); below the cap a node's interior is replaced by a
       `… (N more levels)` marker. Defaults to `:infinity` (no limit).
+    * `:width` - the line-width budget (default `100`) for the compact inline
+      call signature `Mod.fun(name: value, …) => return`. A call whose assembled
+      line fits within `:width` renders inline; a longer one falls back to the
+      stacked layout (name / one arg per line / return). Raise it for a wide
+      terminal, lower it for a strict slide.
   """
 
   @collector_key :code_story_collector
@@ -81,7 +86,7 @@ defmodule CodeStory do
   if a trace is already active.
 
   Both forms accept the options in the [module docs](`CodeStory`) — `:show_args`,
-  `:output`, `:detail`, `:auto_boundary`, `:fold_repeats`, `:depth`:
+  `:output`, `:detail`, `:auto_boundary`, `:fold_repeats`, `:depth`, `:width`:
 
       CodeStory.tell(fn -> entry() end, detail: :outline)
       CodeStory.tell(detail: :novel, output: :file)
@@ -224,7 +229,8 @@ defmodule CodeStory do
         detail: :short_story,
         auto_boundary: true,
         fold_repeats: true,
-        depth: :infinity
+        depth: :infinity,
+        width: 100
       ],
       opts
     )
