@@ -498,22 +498,34 @@ defmodule CodeStory.FormatterTest do
       plain = strip_ansi(Formatter.format([node], show_args: true))
       lines = String.split(plain, "\n")
 
-      assert Enum.at(lines, 1) == "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+      assert Enum.at(lines, 1) == "MyApp.Repo.get!(queryable: MyApp.User, id: 1) => :ok"
       refute plain =~ "arg1"
       refute plain =~ "arg2"
     end
 
-    test ":outline drops the boundary return but keeps the value-args" do
+    test ":outline shows known names only — no values, no return" do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
       plain = strip_ansi(Formatter.format([node], detail: :outline))
-      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1)"
+      assert plain =~ "MyApp.Repo.get!(queryable, id)"
+      refute plain =~ "MyApp.User"
       refute plain =~ "=>"
+    end
+
+    test ":outline write call shows `changeset`; preload shows `struct, preloads`" do
+      insert = boundary(:insert!, [arg1: %{__struct__: MyApp.Log, id: 1}], :ok)
+      pre = boundary(:preload, [arg1: %{__struct__: MyApp.Order, id: 9}, arg2: [:event]], :ok)
+
+      assert strip_ansi(Formatter.format([insert], detail: :outline)) =~
+               "MyApp.Repo.insert!(changeset)"
+
+      assert strip_ansi(Formatter.format([pre], detail: :outline)) =~
+               "MyApp.Repo.preload(struct, preloads)"
     end
 
     test ":outline folded boundary: `Mod.fun(values) ×N` — one space, no =>" do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok, %{count: 2, varies: true})
       plain = strip_ansi(Formatter.format([node], detail: :outline))
-      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) ×2 (varies)"
+      assert plain =~ "MyApp.Repo.get!(queryable, id) ×2 (varies)"
       refute plain =~ "=>"
     end
 
@@ -529,7 +541,7 @@ defmodule CodeStory.FormatterTest do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], %{id: 1}, %{children: [child]})
       lines = String.split(strip_ansi(Formatter.format([node], detail: :outline)), "\n")
 
-      assert Enum.at(lines, 1) == "MyApp.Repo.get!(MyApp.User, 1)"
+      assert Enum.at(lines, 1) == "MyApp.Repo.get!(queryable, id)"
       assert Enum.any?(lines, &(&1 =~ "MyApp.CustomType.load"))
       refute Enum.any?(lines, &(&1 =~ "=>"))
     end
@@ -547,10 +559,10 @@ defmodule CodeStory.FormatterTest do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
 
       assert strip_ansi(Formatter.format([node], detail: :short_story)) =~
-               "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+               "MyApp.Repo.get!(queryable: MyApp.User, id: 1) => :ok"
 
       assert strip_ansi(Formatter.format([node], detail: :novel)) =~
-               "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+               "MyApp.Repo.get!(queryable: MyApp.User, id: 1) => :ok"
     end
 
     test "values use compact opts even when the boundary is nested in :outline" do
@@ -562,26 +574,27 @@ defmodule CodeStory.FormatterTest do
       b = boundary(:all, [q: big_list, s: long_str], :ok)
       parent = %{module: MyApp, function: :load, args: [x: 1], return: :ok, children: [b]}
 
-      outline = strip_ansi(Formatter.format([parent], detail: :outline))
       short = strip_ansi(Formatter.format([parent], detail: :short_story))
       novel = strip_ansi(Formatter.format([parent], detail: :novel))
 
-      assert outline =~ "..."
+      # :short_story applies compact opts to the boundary's values → truncation marker
       assert short =~ "..."
-      # novel shows the full list + string → no truncation marker anywhere
+      # :novel shows the full list + string → no truncation marker anywhere
       refute novel =~ "..."
+      # :outline is names-only (no values) → nothing to truncate
+      refute strip_ansi(Formatter.format([parent], detail: :outline)) =~ "..."
     end
 
     test "a folded boundary renders the signature plus ×N (varies) after the return" do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok, %{count: 2, varies: true})
       plain = strip_ansi(Formatter.format([node], show_args: true))
-      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok ×2 (varies)"
+      assert plain =~ "MyApp.Repo.get!(queryable: MyApp.User, id: 1) => :ok ×2 (varies)"
     end
 
     test "a boundary with a nil return renders => ?" do
       node = boundary(:insert!, [arg1: :x], nil)
       plain = strip_ansi(Formatter.format([node], show_args: true))
-      assert plain =~ "MyApp.Repo.insert!(:x) => ?"
+      assert plain =~ "MyApp.Repo.insert!(changeset: :x) => ?"
     end
 
     test "a boundary with no args renders Mod.fun()" do
@@ -594,7 +607,7 @@ defmodule CodeStory.FormatterTest do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
       out = Formatter.format_plain([node], show_args: true)
       refute out =~ "\e["
-      assert out =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+      assert out =~ "MyApp.Repo.get!(queryable: MyApp.User, id: 1) => :ok"
     end
 
     test "a boundary WITH children renders the signature then its children (no silent drop)" do
@@ -609,7 +622,7 @@ defmodule CodeStory.FormatterTest do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], %{id: 1}, %{children: [child]})
 
       plain = strip_ansi(Formatter.format([node], show_args: true))
-      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) =>"
+      assert plain =~ "MyApp.Repo.get!(queryable: MyApp.User, id: 1) =>"
       # the cross-module child is rendered, not silently dropped
       assert plain =~ "MyApp.CustomType.load"
       assert plain =~ "raw: \"x\""
@@ -621,6 +634,51 @@ defmodule CodeStory.FormatterTest do
       # outline: name-only, no values, no return, no inline "(...) =>"
       refute plain =~ "=>"
       refute plain =~ "(3, 2)"
+    end
+
+    test ":short_story get_by! → queryable + filters" do
+      node = boundary(:get_by!, [arg1: MyApp.Settings, arg2: [event_id: 1]], :ok)
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+
+      assert plain =~
+               "MyApp.Repo.get_by!(queryable: MyApp.Settings, filters: [event_id: 1]) => :ok"
+    end
+
+    test "composes with #Ecto.Query<Schema> compaction on the queryable value" do
+      query = %{__struct__: Ecto.Query, from: %{source: {"regs", MyApp.Reg}}}
+      node = boundary(:all, [arg1: query], [])
+      plain = strip_ansi(Formatter.format([node], show_args: true))
+      assert plain =~ "MyApp.Repo.all(queryable: #Ecto.Query<MyApp.Reg>) => []"
+    end
+
+    test "unmapped function falls back to positional values (short_story + outline)" do
+      node = boundary(:aggregate, [arg1: MyApp.User, arg2: :count], 5)
+      short = strip_ansi(Formatter.format([node], show_args: true))
+      outline = strip_ansi(Formatter.format([node], detail: :outline))
+
+      assert short =~ "MyApp.Repo.aggregate(MyApp.User, :count) => 5"
+      refute short =~ "queryable"
+      assert outline =~ "MyApp.Repo.aggregate(MyApp.User, :count)"
+      refute outline =~ "=>"
+    end
+
+    test "surplus arg past the known-name list pads to a bare value, never dropped" do
+      # `all` names are ["queryable", "opts"]; a 3rd arg has no name → renders as value.
+      node = boundary(:all, [arg1: :q, arg2: :o, arg3: :extra], :ok)
+      short = strip_ansi(Formatter.format([node], show_args: true))
+      outline = strip_ansi(Formatter.format([node], detail: :outline))
+
+      assert short =~ "MyApp.Repo.all(queryable: :q, opts: :o, :extra) => :ok"
+      refute short =~ "nil:"
+      assert outline =~ "MyApp.Repo.all(queryable, opts, :extra)"
+      refute outline =~ ", )"
+    end
+
+    test "show_args: false → positional values (names suppressed) for boundaries too" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
+      plain = strip_ansi(Formatter.format([node], show_args: false))
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+      refute plain =~ "queryable"
     end
   end
 

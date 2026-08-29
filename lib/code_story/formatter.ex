@@ -99,12 +99,32 @@ defmodule CodeStory.Formatter do
   defp format_node(%{boundary: true} = node, depth, ropts) do
     opts = ropts.inspect_opts
     value_strings = inspect_args(node.args, opts)
-    sig = signature(node, :positional, value_strings)
 
-    # `:outline` shows no returns — for boundary calls too, not just user functions.
-    # The signature (values) stays (boundary arg names are meaningless macro junk); only
-    # the return fragment drops. `count_suffix` carries its own leading space, so a
-    # folded `:outline` boundary is `Mod.fun(values) ×N` with exactly one space, no `=>`.
+    # Ecto Repo callbacks compile to macro-generated (junk) param names, but the Repo
+    # API's names are known (`CodeStory.RepoParams`) — supply them positionally so a
+    # boundary call reads like a user function across the detail dial. A `nil` name (an
+    # unmapped function, or a surplus arg past the known-name list) falls back to the
+    # value per cell inside `arg_cells`, so the unmapped path stays value-based (as before).
+    names = CodeStory.RepoParams.names(node.function)
+
+    named_args =
+      node.args
+      |> Enum.with_index()
+      |> Enum.map(fn {{_junk, value}, i} -> {names && Enum.at(names, i), value} end)
+
+    arg_mode =
+      cond do
+        ropts.detail == :outline -> :names_only
+        ropts.show_args -> :named
+        true -> :positional
+      end
+
+    cells = named_args |> arg_cells(value_strings, arg_mode) |> Enum.join(", ")
+    sig = wrap_signature(node, cells)
+
+    # `:outline` shows no returns (user functions too) — the return fragment drops there,
+    # shared across mapped and unmapped calls. `count_suffix` carries its own leading
+    # space, so a folded `:outline` boundary is `Mod.fun(args) ×N`, one space, no `=>`.
     return = if ropts.detail == :outline, do: "", else: " #{format_return(node.return, opts)}"
     line = "#{indent(depth * 2)}#{sig}#{return}#{count_suffix(node)}"
 
@@ -214,23 +234,45 @@ defmodule CodeStory.Formatter do
   @spec signature(map(), :named | :positional | :names_only, [String.t()]) :: String.t()
   defp signature(node, arg_mode, value_strings) do
     cells = node.args |> arg_cells(value_strings, arg_mode) |> Enum.join(", ")
-    "#{@blue}#{format_function_name(node)}#{@reset}(#{cells})"
+    wrap_signature(node, cells)
   end
+
+  # The `Mod.fun(cells)` wrapper — single-sourced so the general path (`signature/3`)
+  # and the boundary clause (which supplies its own name-substituted cells) can't drift
+  # in name color / paren style.
+  @spec wrap_signature(map(), String.t()) :: String.t()
+  defp wrap_signature(node, cells), do: "#{@blue}#{format_function_name(node)}#{@reset}(#{cells})"
 
   # One renderer per arg mode for the bare `name: value` cell — single-sourced so the
   # inline signature (cells joined with ", ") and the stacked layout (each cell
   # prefixed with the arg indent) can never silently drift apart.
-  @spec arg_cells(keyword(), [String.t()], :named | :positional | :names_only) :: [String.t()]
+  # A `nil` name (an unmapped boundary arg, or a surplus arg past the known-name list)
+  # falls back to the bare value **per cell** — so a mixed named/nil call never emits
+  # `nil: value` or a dangling empty cell.
+  @spec arg_cells(
+          [{atom() | String.t() | nil, term()}],
+          [String.t()],
+          :named | :positional | :names_only
+        ) ::
+          [String.t()]
   defp arg_cells(args, strs, :named) do
     args
     |> Enum.zip(strs)
-    |> Enum.map(fn {{name, _v}, s} -> "#{@yellow}#{name}:#{@reset} #{s}" end)
+    |> Enum.map(fn
+      {{nil, _v}, s} -> s
+      {{name, _v}, s} -> "#{@yellow}#{name}:#{@reset} #{s}"
+    end)
   end
 
   defp arg_cells(_args, strs, :positional), do: strs
 
-  defp arg_cells(args, _strs, :names_only) do
-    Enum.map(args, fn {name, _v} -> "#{@yellow}#{name}#{@reset}" end)
+  defp arg_cells(args, strs, :names_only) do
+    args
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {{nil, _v}, i} -> Enum.at(strs, i, "")
+      {{name, _v}, _i} -> "#{@yellow}#{name}#{@reset}"
+    end)
   end
 
   # `line` fits when its VISIBLE width (ANSI stripped, indentation included) is within

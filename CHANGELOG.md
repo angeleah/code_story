@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   terminals (and projectors). Meaning never rests on color — structure, `=>`,
   `name:`, `×N`, and indentation carry it — so this is purely a readability bump.
 
-- At `:outline` detail, boundary (`Repo.*`) calls now drop their `=> return`, matching
-  user functions — `:outline` is uniformly structure-only. The signature (with values)
-  still shows; `:short_story`/`:novel` keep the return.
+- Boundary (`Repo.*`) calls now render with their known Ecto parameter names across the
+  detail dial, like user functions: `:outline` shows names only
+  (`Repo.get!(queryable, id)`, `Repo.preload(struct, preloads)`), `:short_story`/`:novel`
+  show `name: value` (`Repo.get_by!(queryable: MailSettings, filters: [event_id: 1])`),
+  and the return drops at `:outline` only. Names come from a small built-in table (no
+  Ecto dependency); unmapped functions fall back to positional values.
 
 ### Added
 
