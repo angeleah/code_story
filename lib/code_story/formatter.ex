@@ -10,12 +10,16 @@ defmodule CodeStory.Formatter do
   structs almost always exceed the budget and stack.
   """
 
-  # ANSI color codes
-  @cyan "\e[36m"
-  @blue "\e[34m"
-  @yellow "\e[33m"
-  @green "\e[32m"
-  @magenta "\e[35m"
+  # ANSI color codes. Semantic roles are **bold** (`1;`) for dual-background
+  # legibility: bold adds stroke weight on every terminal (the reliable win), and on
+  # "bold as bright" terminals also brightens (a bonus on dark). `@dim` markers stay
+  # subdued; meaning never rests on color (structure/`=>`/`name:`/`×N`/indentation
+  # carry it), so this is a legibility bump, not a correctness dependency.
+  @cyan "\e[1;36m"
+  @blue "\e[1;34m"
+  @yellow "\e[1;33m"
+  @green "\e[1;32m"
+  @magenta "\e[1;35m"
   @dim "\e[90m"
   @reset "\e[0m"
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The trace's semantic colors are now **bold** for legibility on both light and dark
+  terminals (and projectors). Meaning never rests on color — structure, `=>`,
+  `name:`, `×N`, and indentation carry it — so this is purely a readability bump.
+
 - At `:outline` detail, boundary (`Repo.*`) calls now drop their `=> return`, matching
   user functions — `:outline` is uniformly structure-only. The signature (with values)
   still shows; `:short_story`/`:novel` keep the return.

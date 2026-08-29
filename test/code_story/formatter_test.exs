@@ -104,6 +104,19 @@ defmodule CodeStory.FormatterTest do
 
       assert output =~ "\e["
     end
+
+    test "semantic colors are bold for dual-background legibility (no bare codes)" do
+      output = Formatter.format(@simple_tree, show_args: true)
+
+      # function name = bold blue, return = bold green, header = bold cyan
+      assert output =~ "\e[1;34m"
+      assert output =~ "\e[1;32m"
+      assert output =~ "\e[1;36m"
+      # and none of the non-bold forms remain
+      refute output =~ "\e[34m"
+      refute output =~ "\e[32m"
+      refute output =~ "\e[36m"
+    end
   end
 
   describe "format/2 interrupted nodes" do
@@ -704,7 +717,8 @@ defmodule CodeStory.FormatterTest do
 
       assert strip_ansi(out) =~ "MyApp.f(x: 1) => ?"
       refute strip_ansi(out) =~ "=> nil"
-      assert out =~ "#{IO.ANSI.green()}=> ?#{IO.ANSI.reset()}"
+      # green is now BOLD green (dual-background legibility)
+      assert out =~ "\e[1;32m=> ?\e[0m"
     end
 
     test "arg modes: named (show_args), positional (no show_args), names-only (:outline)" do
