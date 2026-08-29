@@ -490,10 +490,54 @@ defmodule CodeStory.FormatterTest do
       refute plain =~ "arg2"
     end
 
-    test ":outline still shows the boundary's values and return (not name-only)" do
+    test ":outline drops the boundary return but keeps the value-args" do
       node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
       plain = strip_ansi(Formatter.format([node], detail: :outline))
-      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1)"
+      refute plain =~ "=>"
+    end
+
+    test ":outline folded boundary: `Mod.fun(values) ×N` — one space, no =>" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok, %{count: 2, varies: true})
+      plain = strip_ansi(Formatter.format([node], detail: :outline))
+      assert plain =~ "MyApp.Repo.get!(MyApp.User, 1) ×2 (varies)"
+      refute plain =~ "=>"
+    end
+
+    test ":outline boundary with children: signature (no return) then children" do
+      child = %{
+        module: MyApp.CustomType,
+        function: :load,
+        args: [raw: "x"],
+        return: :ok,
+        children: []
+      }
+
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], %{id: 1}, %{children: [child]})
+      lines = String.split(strip_ansi(Formatter.format([node], detail: :outline)), "\n")
+
+      assert Enum.at(lines, 1) == "MyApp.Repo.get!(MyApp.User, 1)"
+      assert Enum.any?(lines, &(&1 =~ "MyApp.CustomType.load"))
+      refute Enum.any?(lines, &(&1 =~ "=>"))
+    end
+
+    test ":outline boundary nested under a user fn also drops the return" do
+      b = boundary(:all, [q: [1, 2], s: "x"], :ok)
+      parent = %{module: MyApp, function: :load, args: [x: 1], return: :ok, children: [b]}
+      plain = strip_ansi(Formatter.format([parent], detail: :outline))
+
+      assert plain =~ "MyApp.Repo.all("
+      refute plain =~ "=>"
+    end
+
+    test ":short_story and :novel keep the boundary return (unchanged)" do
+      node = boundary(:get!, [arg1: MyApp.User, arg2: 1], :ok)
+
+      assert strip_ansi(Formatter.format([node], detail: :short_story)) =~
+               "MyApp.Repo.get!(MyApp.User, 1) => :ok"
+
+      assert strip_ansi(Formatter.format([node], detail: :novel)) =~
+               "MyApp.Repo.get!(MyApp.User, 1) => :ok"
     end
 
     test "values use compact opts even when the boundary is nested in :outline" do
@@ -605,7 +649,7 @@ defmodule CodeStory.FormatterTest do
       assert out =~ "EctoIsh"
     end
 
-    test "strips noise in a boundary signature (site 75; :outline shows values)" do
+    test "strips noise in a boundary signature (site 75; :short_story shows the return)" do
       tree = [
         %{
           module: MyApp.Repo,
@@ -617,7 +661,9 @@ defmodule CodeStory.FormatterTest do
         }
       ]
 
-      out = strip_ansi(Formatter.format(tree, detail: :outline))
+      # :short_story renders the boundary return (:outline drops it), so this is where
+      # the returned Ecto value — and its stripped noise — is visible.
+      out = strip_ansi(Formatter.format(tree, detail: :short_story))
       refute out =~ "Ecto.Schema.Metadata"
       assert out =~ "MyApp.Repo.get!("
       assert out =~ "EctoIsh"

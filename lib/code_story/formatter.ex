@@ -97,7 +97,12 @@ defmodule CodeStory.Formatter do
     value_strings = inspect_args(node.args, opts)
     sig = signature(node, :positional, value_strings)
 
-    line = "#{indent(depth * 2)}#{sig} #{format_return(node.return, opts)}#{count_suffix(node)}"
+    # `:outline` shows no returns — for boundary calls too, not just user functions.
+    # The signature (values) stays (boundary arg names are meaningless macro junk); only
+    # the return fragment drops. `count_suffix` carries its own leading space, so a
+    # folded `:outline` boundary is `Mod.fun(values) ×N` with exactly one space, no `=>`.
+    return = if ropts.detail == :outline, do: "", else: " #{format_return(node.return, opts)}"
+    line = "#{indent(depth * 2)}#{sig}#{return}#{count_suffix(node)}"
 
     # Usually childless (interior suppressed). But the collector attaches a
     # cross-module call made from inside the boundary (e.g. a custom `Ecto.Type`)

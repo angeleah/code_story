@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- At `:outline` detail, boundary (`Repo.*`) calls now drop their `=> return`, matching
+  user functions — `:outline` is uniformly structure-only. The signature (with values)
+  still shows; `:short_story`/`:novel` keep the return.
+
 ### Added
 
 - User-defined function calls now render as a compact inline signature —
