@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
 ### Changed
 
 - The trace's semantic colors are now **bold** for legibility on both light and dark
@@ -18,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Repo.get!(queryable, id)`, `Repo.preload(struct, preloads)`), `:short_story`/`:novel`
   show `name: value` (`Repo.get_by!(queryable: MailSettings, filters: [event_id: 1])`),
   and the return drops at `:outline` only. Names come from a small built-in table (no
-  Ecto dependency); unmapped functions fall back to positional values.
+  Ecto dependency) covering the common callbacks — `get`, `get_by`, `all`, `one`,
+  `insert`, `update`, `delete`, `preload`, and `aggregate`; other functions fall back
+  to positional values.
 
 ### Added
 
@@ -71,5 +75,6 @@ Initial release.
 - `:output` — write the trace to `:terminal` (default), `:file`, or `:both`.
 - `:show_args` — show argument names alongside values (default `true`).
 
-[Unreleased]: https://github.com/angeleah/code_story/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/angeleah/code_story/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/angeleah/code_story/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/angeleah/code_story/releases/tag/v0.1.0
