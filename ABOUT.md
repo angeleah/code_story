@@ -10,7 +10,7 @@ You could grep. You could read every module top to bottom. You could set breakpo
 
 ## What Is CodeStory?
 
-CodeStory is a code comprehension tool for Elixir that lets your code tell its own story. It shows you the *narrative* of a code path: which functions call which, with what arguments, and what comes back. You control how much detail you get — from a quick outline of the plot to the full novel with every value unabridged.
+CodeStory is a code comprehension tool for Elixir that lets your code tell its own story. It shows you the _narrative_ of a code path: which functions call which, with what arguments, and what comes back. You control how much detail you get — from a quick outline of the plot to the full novel with every value unabridged.
 
 Drop two lines into any function:
 
@@ -27,22 +27,11 @@ And CodeStory produces a call tree like this:
 
 ```
 --- CodeStory Trace ---
-Orders.create_order
-  params: %{item: "widget", qty: 3}
-
-  Orders.validate
-    params: %{item: "widget", qty: 3}
-  => :ok
-  Pricing.calculate_total
-    item: "widget"
-    qty: 3
-  => 29.97
-  Invoices.create
-    item: "widget"
-    total: 29.97
-  => %Invoice{id: 42}
-
-=> Orders.create_order returned %Invoice{id: 42}
+MyApp.Orders.create_order(params: %{item: "widget", qty: 3})
+  MyApp.Orders.validate(params: %{item: "widget", qty: 3}) => :ok
+  MyApp.Pricing.calculate_total(item: "widget", qty: 3) => 29.97
+  MyApp.Invoices.create(item: "widget", total: 29.97) => %MyApp.Invoice{id: 42}
+=> MyApp.Orders.create_order returned %MyApp.Invoice{id: 42}
 --- End Trace ---
 ```
 
@@ -104,7 +93,7 @@ Your own code becomes unfamiliar over time. CodeStory is a fast way to re-orient
 
 **It's not `IO.inspect`.** `IO.inspect` shows you one value at one point. CodeStory shows you the entire call flow at once — every function's inputs and outputs in a single structured trace. No more scattering inspect calls and piecing together interleaved output.
 
-**It's not `dbg`.** Elixir's built-in `dbg/2` is great for pipeline debugging — seeing each step of a `|>` chain. But it operates on a single expression. CodeStory captures a *span* of execution between tell and stop, showing every user-defined function call in that window. When a bug could be in any of a dozen functions in the call chain, CodeStory lets you see all of them at once.
+**It's not `dbg`.** Elixir's built-in `dbg/2` is great for pipeline debugging — seeing each step of a `|>` chain. But it operates on a single expression. CodeStory captures a _span_ of execution between tell and stop, showing every user-defined function call in that window. When a bug could be in any of a dozen functions in the call chain, CodeStory lets you see all of them at once.
 
 **It's not a profiler.** Profilers care about timing and performance. CodeStory cares about comprehension — what called what, with what data, and what came back.
 
@@ -141,7 +130,7 @@ CodeStory was built with practical, everyday use in mind:
 - **Anyone tracking down a bug** who wants to see every function's inputs and outputs in one place instead of scattering `IO.inspect` calls
 - **Senior engineers refactoring** who want runtime proof of what a code path actually does before changing it
 - **Team leads reviewing architecture** who want to see if module boundaries are being respected in practice
-- **Anyone working in Elixir** who has ever thought "I wish I could just *hear* what this code does"
+- **Anyone working in Elixir** who has ever thought "I wish I could just _hear_ what this code does"
 
 ## Getting Started
 

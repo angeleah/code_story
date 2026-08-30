@@ -22,7 +22,7 @@ Add `code_story` to your dependencies in `mix.exs`:
 
 ```elixir
 defp deps do
-  [{:code_story, "~> 0.1.0", only: :dev}]
+  [{:code_story, "~> 0.2.0", only: :dev}]
 end
 ```
 
@@ -85,31 +85,25 @@ This outputs a nested call tree to the terminal:
 
 ```
 --- CodeStory Trace ---
-process_order
-  params: %{items: [...], customer_id: 7}
-
-  validate_item ×3 (varies)
-    item: %{sku: "A1", qty: 2}
-  => :ok
-
-  calculate_total
-    items: [...]
-  => 29.97
-
-  Repo.insert!
-    changeset: #Ecto.Changeset<...>
-  => %Invoice{id: 42}
-
-=> process_order returned %Invoice{id: 42}
+MyApp.Orders.process_order(params: %{customer_id: 7, items: [...]})
+  MyApp.Orders.validate_item(item: %{sku: "A1", qty: 2}) => :ok ×3 (varies)
+  MyApp.Orders.calculate_total(items: [...]) => 29.97
+  MyApp.Repo.insert!(changeset: #Ecto.Changeset<...>) => %MyApp.Invoice{id: 42}
+=> MyApp.Orders.process_order returned %MyApp.Invoice{id: 42}
 --- End Trace ---
 ```
 
-Each function name appears on its own line, with arguments and return values indented below it. Functions with children are visually separated by blank lines.
+Each call renders as a compact **inline signature** — `Mod.fun(name: value, …) => return`
+on one line — so the trace reads as one dense indented tree, with indentation showing call
+depth. A call whose assembled line would exceed the `:width` budget (default `100`) falls
+back to a **stacked layout** instead: the function name, one argument per line, then the
+return. So a trace naturally mixes inline (small calls) and stacked (struct-heavy ones).
 
 A few things happen by default to keep the story readable:
 
 - **Repeated calls fold.** The three `validate_item` calls collapse into one node marked `×3` — or `×3 (varies)` when the calls share a function but differ in their arguments (a single representative call is shown). Turn this off with `fold_repeats: false`.
-- **Infrastructure stays at the boundary.** A call into your Ecto repo (`Repo.insert!`) appears as a single node with its arguments and return; the repo's internal Ecto plumbing is hidden. Turn this off with `auto_boundary: false`.
+- **Infrastructure stays at the boundary.** A call into your Ecto repo appears as a single node rendered with its **known Ecto parameter names** — `Repo.insert!(changeset: …)`, `Repo.get!(queryable, id)`, `Repo.aggregate(queryable, aggregate)` — while the repo's internal Ecto plumbing is hidden. Turn this off with `auto_boundary: false`.
+- **Ecto values read cleanly.** A schema struct drops its `__meta__`/`NotLoaded` bookkeeping (so it reads `%Order{id: 12, status: "paid", …}`), and an `Ecto.Query` argument shows as `#Ecto.Query<Schema>` rather than the full query dump. No Ecto dependency — detection is purely string-shaped.
 
 Only your project's own functions appear in the trace. Standard library calls, dependency code, framework-generated functions (like `__struct__/0`, `__changeset__/0`), and CodeStory itself are filtered out automatically.
 
@@ -155,6 +149,12 @@ CodeStory.tell(show_args: false, output: :both)
   so on); below the cap a node's interior is replaced by a `… (N more levels)`
   marker. Default: `:infinity` (no limit).
 
+- **`width`** — the line-width budget for the compact inline signature
+  `Mod.fun(name: value, …) => return`. A call whose assembled line fits within
+  `width` renders inline; a longer one falls back to the stacked layout (name,
+  one argument per line, return). Default: `100`. Raise it for a wide terminal,
+  lower it for a strict slide, or pass `:infinity` to force every call inline.
+
 ## How It Differs from `dbg/2`
 
 |                   | `dbg/2`                                | CodeStory                                                  |
@@ -182,6 +182,11 @@ Terminal output uses ANSI colors for readability:
 - **Argument names**: yellow
 - **Argument values**: default terminal color
 - **Return values**: green
+- **Fold marker** (`×N`): magenta
+
+The semantic colors render **bold**, so the trace stays legible on both light and dark
+terminals (and projectors). Meaning never rests on color alone — structure, `=>`, `name:`,
+`×N`, and indentation carry it — so bold is purely a readability bump, not a dependency.
 
 ## Limitations (v1)
 
