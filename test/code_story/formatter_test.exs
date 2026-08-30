@@ -652,13 +652,23 @@ defmodule CodeStory.FormatterTest do
     end
 
     test "unmapped function falls back to positional values (short_story + outline)" do
+      node = boundary(:insert_all, [arg1: MyApp.User, arg2: :entries], 5)
+      short = strip_ansi(Formatter.format([node], show_args: true))
+      outline = strip_ansi(Formatter.format([node], detail: :outline))
+
+      assert short =~ "MyApp.Repo.insert_all(MyApp.User, :entries) => 5"
+      refute short =~ "queryable"
+      assert outline =~ "MyApp.Repo.insert_all(MyApp.User, :entries)"
+      refute outline =~ "=>"
+    end
+
+    test "aggregate renders with its Ecto param names across the dial" do
       node = boundary(:aggregate, [arg1: MyApp.User, arg2: :count], 5)
       short = strip_ansi(Formatter.format([node], show_args: true))
       outline = strip_ansi(Formatter.format([node], detail: :outline))
 
-      assert short =~ "MyApp.Repo.aggregate(MyApp.User, :count) => 5"
-      refute short =~ "queryable"
-      assert outline =~ "MyApp.Repo.aggregate(MyApp.User, :count)"
+      assert short =~ "MyApp.Repo.aggregate(queryable: MyApp.User, aggregate: :count) => 5"
+      assert outline =~ "MyApp.Repo.aggregate(queryable, aggregate)"
       refute outline =~ "=>"
     end
 

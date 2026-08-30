@@ -28,7 +28,11 @@ defmodule CodeStory.RepoParams do
     update!: ["changeset", "opts"],
     delete: ["changeset", "opts"],
     delete!: ["changeset", "opts"],
-    preload: ["struct", "preloads", "opts"]
+    preload: ["struct", "preloads", "opts"],
+    # aggregate/3 (:count) and aggregate/4 (:sum/:avg/… + field) share these names
+    # positionally; the rare aggregate(q, :count, opts) form would mislabel opts as
+    # field — accepted, like the changeset umbrella above.
+    aggregate: ["queryable", "aggregate", "field", "opts"]
   }
 
   @spec names(atom()) :: [String.t()] | nil
