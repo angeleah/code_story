@@ -7,3 +7,6 @@ code_story_trace.log
 erl_crash.dump
 /.serena/
 /plans/
+
+# Hex build artifacts (mix hex.build)
+*.tar
