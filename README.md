@@ -1,5 +1,9 @@
 # CodeStory
 
+[![Hex.pm](https://img.shields.io/hexpm/v/code_story.svg)](https://hex.pm/packages/code_story)
+[![Hexdocs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/code_story)
+[![License](https://img.shields.io/hexpm/l/code_story.svg)](LICENSE)
+
 Every codebase has a story. CodeStory lets you read it. Drop `CodeStory.tell()` into a function and see the narrative unfold: which functions are called, with what arguments (by name and value), and what they return — rendered as a nested call tree.
 
 **Use cases:**
