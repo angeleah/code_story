@@ -33,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trace mixes inline (small calls) and stacked (big ones). `:width` is
   configurable per trace (`CodeStory.tell(fn -> … end, width: 120)`).
 - Ecto queries render compactly in traces. An `Ecto.Query` argument to a boundary
-  call now reads as `#Ecto.Query<Confab.Registration.Registration>` (the queried
-  schema) at the summary detail levels, instead of the full
+  call now reads as `#Ecto.Query<MyApp.Accounts.User>` (the queried schema) at the
+  summary detail levels, instead of the full
   `#Ecto.Query<from r0 in …, where: …, order_by: …>` dump; string-table and
   subquery sources render `#Ecto.Query<"table">` / `#Ecto.Query<subquery>`. The
   full query is preserved at `:novel`. No Ecto dependency — detection is structural.
